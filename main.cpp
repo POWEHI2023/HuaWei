@@ -14,12 +14,11 @@
 #include <cassert>
 
 #define N 200
-#define ROBOT_NUM 10
-#define BERTH_NUM 10
-#define BOAT_NUM 5
-
 #define BOAT_PRICE 8000
 #define ROBOT_PRICE 2000
+
+#define ROBOT_LIMIT 20        // 设置一个最大量
+#define BOAT_LIMIT 10         // 设置一个最大量
 
 #define display(msg, ...) ({ fprintf(stderr, #msg, ##__VA_ARGS__); })
 #define CHECK_OK() ({ char okk[100]; scanf("%s", okk); })
@@ -110,8 +109,9 @@ struct Berth: public BaseElem::Berth__ {
 struct Good: public BaseElem::Good__ {};
 struct Robot: public BaseElem::Robot__ {
           Path current_path;
-
+          inline void pull() const noexcept;
 };
+
 struct Boat: public BaseElem::Boat__ {
           int crt_num = 0;
           bool can_leave = false;
@@ -215,29 +215,20 @@ using BerthStor = BaseElem::BerthStor;
 */
 namespace BaseElem {
           typedef std::vector<std::pair<int, int>> PurchasePoint__;
-          class PurchasePoint: public PurchasePoint__ {
-          public:
-                    template <typename... TArgs>
-                    explicit PurchasePoint(TArgs... args): PurchasePoint__(std::forward<TArgs>(args)...) {}
-                    
-                    // make instance in purchase/ robot or boat
-                    void purchase(int purchase_id) noexcept {
-                              if (purchase_id >= PurchasePoint__::size()) {
-                                        fprintf(stderr, "Purchae id out of boundary......\n");
-                                        return;
-                              }
-                              printf("lboat %d %d\n", (*this)[purchase_id].first, (*this)[purchase_id].second);
-                    }
-          };
+          template <typename T> class PurchasePoint;
 
+          // Base
           struct Base {
                     static inline void init() noexcept {
+                              display(Base init......\n);
+
                               grid = (char **)malloc(N * sizeof(char *));
                               for (int i = 0; i < N; ++i) grid[i] = (char *)malloc(N * sizeof(char));
 
                               for (int i = 0; i < N; ++i) scanf("%s", grid[i]);
                               Base::ProcessMap();
-                              
+                              Base::DisplayMap();
+
                               scanf("%d", &berth_num);
                               berths.resize(berth_num);
                               for (int i = 0; i < berth_num; ++i) {
@@ -263,36 +254,17 @@ namespace BaseElem {
                     static int berth_num;
                     static int goods_num;
 
-                    static PurchasePoint robot_purchase_point;
-                    static PurchasePoint boat_purchase_point;
+                    static PurchasePoint<Robot> robot_purchase_point;
+                    static PurchasePoint<Boat> boat_purchase_point;
                     static std::vector<std::pair<int, int>> delivery_point;
           private:
-                    static void ProcessMap() noexcept {
-                              for (int i = 0; i < N; ++i) {
-                                        for (int j = 0; j < N; ++j) {
-                                                  if (grid[i][j] == 'R') robot_purchase_point.emplace_back(i, j);
-                                                  else if (grid[i][j] == 'S') boat_purchase_point.emplace_back(i, j);
-                                                  else if (grid[i][j] == 'T') delivery_point.emplace_back(i, j);
-                                        }
-                              }
-                    }
+                    static void ProcessMap() noexcept;
+                    static void DisplayMap() noexcept;
           };
-          BerthStor Base::berths = BerthStor();
-          int Base::boat_capacity = 0;
-          char **Base::grid = NULL;
 
-          int Base::robot_num = 0;
-          int Base::boat_num = 0;
-          int Base::berth_num = 0;
-          int Base::goods_num = 0;
-
-          PurchasePoint Base::robot_purchase_point = PurchasePoint();
-          PurchasePoint Base::boat_purchase_point = PurchasePoint();
-          std::vector<std::pair<int, int>> Base::delivery_point = std::vector<std::pair<int, int>>();
-
-
+          // Frame
           struct Frame {
-                    static int id;
+                    static int id, money;
                     static GoodStor goods;
                     static std::vector<Robot> robots;
                     static std::vector<Boat> boats;
@@ -300,22 +272,34 @@ namespace BaseElem {
                     static int gap_id;  // 与上一次update之间差了几帧
                     
                     static inline void init() noexcept {
+                              display(Frame init......\n);
+
                               // Frame::robots.resize(ROBOT_NUM);
                               // Frame::boats.resize(BOAT_NUM);
+                              Frame::robots.reserve(ROBOT_LIMIT);
+                              Frame::boats.reserve(BOAT_LIMIT);
 
                               // there is no robots and boats......
                     }
                     static inline int update() noexcept;
           };
+
+          /**
+           * Frame部分
+          */
+
           int Frame::id = 0;
           int Frame::gap_id = 0;
+          int Frame::money = 0;
           GoodStor Frame::goods = GoodStor();
           std::vector<Robot> Frame::robots = std::vector<Robot>();
           std::vector<Boat> Frame::boats = std::vector<Boat>();
 
           std::vector<int> buffer;
           int Frame::update() noexcept {
-                    int crt_id, money, good_num;
+                    display(Frame update......\n);
+
+                    int crt_id, good_num;
                     if (scanf("%d%d", &crt_id, &money) == EOF) return -1;       // 第一行输入2个整数
                     gap_id = crt_id - id;
 
@@ -338,7 +322,9 @@ namespace BaseElem {
                     int robot_num;
                     scanf("%d", &robot_num);
                     // check the number of robot is right
+                    display(RobotNum: %d and BaseRobotNum: %d\n, robot_num, Base::robot_num);
                     assert(robot_num == Base::robot_num);
+                    robots.resize(robot_num);     // 确保有足够的位置
                     for (int i = 0; i < Base::robot_num; ++i) {
                               scanf("%d%d%d%d", &robots[i].id, &robots[i].goods_num, &robots[i].x, &robots[i].y);
                     }
@@ -347,6 +333,7 @@ namespace BaseElem {
                     scanf("%d", &boat_num);
                     // check......
                     assert(boat_num == Base::boat_num);
+                    boats.resize(boat_num);       // 确保有足够的位置
                     for (int i = 0; i < Base::boat_num; ++i) {
                               scanf("%d%d%d%d%d%d", &boats[i].id, &boats[i].goods_num, &boats[i].x, &boats[i].y, &boats[i].dir, &boats[i].status);
                     }
@@ -355,6 +342,75 @@ namespace BaseElem {
                     // scanf("%s", okk);
                     return id;
           }
+
+          /**
+           * Purchase部分
+          */
+
+          template <typename T>
+          class PurchasePoint: public PurchasePoint__ {
+          public:
+                    template <typename... TArgs>
+                    explicit PurchasePoint(TArgs... args): PurchasePoint__(std::forward<TArgs>(args)...) {}
+                    
+                    // make instance in purchase/ robot or boat
+                    bool purchase(int purchase_id) noexcept {
+                              if (purchase_id >= PurchasePoint__::size()) {
+                                        fprintf(stderr, "Purchae id out of boundary......\n");
+                                        return false;
+                              }
+                              display(Buy something in purchase id: %d\n, purchase_id);
+                              if constexpr (std::is_same_v<T, Robot>) {
+                                        if (Frame::money < ROBOT_PRICE) return false;
+                                        Base::robot_num++; Frame::money -= ROBOT_PRICE;   // 更新数据
+                                        printf("lbot %d %d\n", (*this)[purchase_id].first, (*this)[purchase_id].second); 
+                              } else {
+                                        if (Frame::money < BOAT_PRICE) return false;
+                                        Base::boat_num++; Frame::money -= BOAT_PRICE;
+                                        printf("lboat %d %d\n", (*this)[purchase_id].first, (*this)[purchase_id].second); 
+                              }
+                              return true;
+                    }
+          };
+
+
+          void Base::ProcessMap() noexcept {
+                    for (int i = 0; i < N; ++i) {
+                              for (int j = 0; j < N; ++j) {
+                                        if (grid[i][j] == 'R') robot_purchase_point.emplace_back(i, j);
+                                        else if (grid[i][j] == 'S') boat_purchase_point.emplace_back(i, j);
+                                        else if (grid[i][j] == 'T') delivery_point.emplace_back(i, j);
+                              }
+                    }
+          }
+
+          void Base::DisplayMap() noexcept {
+                    display(Robot purchase points:\n);
+                    for (auto &&[x, y] : Base::robot_purchase_point) 
+                              display([x: %d y: %d]\n, x, y);
+                    
+                    display(Boat purchasr points:\n);
+                    for (auto &&[x, y] : Base::boat_purchase_point) {
+                              display([x: %d y: %d]\n, x, y);
+                    }
+          }
+
+          /**
+           * Base部分
+          */
+
+          BerthStor Base::berths = BerthStor();
+          int Base::boat_capacity = 0;
+          char **Base::grid = NULL;
+
+          int Base::robot_num = 0;
+          int Base::boat_num = 0;
+          int Base::berth_num = 0;
+          int Base::goods_num = 0;
+
+          PurchasePoint<Robot> Base::robot_purchase_point = PurchasePoint<Robot>();
+          PurchasePoint<Boat> Base::boat_purchase_point = PurchasePoint<Boat>();
+          std::vector<std::pair<int, int>> Base::delivery_point = std::vector<std::pair<int, int>>();
 }
 
 /**
@@ -369,13 +425,17 @@ struct MyBase: public BaseElem::Base {
           static inline void init() noexcept {
                     Base::init();
                     // int [N][N][ROBOT_NUM]
-                    locks_.resize(N, std::vector< std::vector<int> >(N, std::vector<int>(ROBOT_NUM, 0)));
+                    locks_.resize(N, std::vector< std::vector<int> >(N, std::vector<int>(20, 0)));  // 一次开大点20个机器人的锁
           }
 };
 // int ***MyBase::locks_ = NULL;
 std::vector< std::vector< std::vector<int> > > MyBase::locks_ = std::vector< std::vector< std::vector<int> > >();
 
 struct MyFrame: public BaseElem::Frame {
+          static int clock_for_margin_func;
+          static int need_robot;
+          static int need_boat;
+
           static int update() noexcept;
 
           static inline void init() noexcept {
@@ -386,6 +446,9 @@ struct MyFrame: public BaseElem::Frame {
           // 购买的动作，是否购买机器人或者船......
           static inline void purchase_action() noexcept;
 };
+int MyFrame::clock_for_margin_func { 1 };
+int MyFrame::need_robot { 1 };
+int MyFrame::need_boat { 1 };
 
 /**
  * 主循环
@@ -435,8 +498,22 @@ int MyFrame::update() noexcept {
           return Frame::id;
 }
 
+/**
+ * 当能够购买的数量大于0，并且当前存在数量小于最大数量
+ * 购买机器人或者船
+*/
 void MyFrame::purchase_action() noexcept {
+          display(Purchase action......\n);
 
+          if (need_robot > 0 && MyBase::robot_num < ROBOT_LIMIT) {
+                    int id = std::rand() % MyBase::robot_purchase_point.size();
+                    if (MyBase::robot_purchase_point.purchase(id)) need_robot--;
+          }
+
+          if (need_boat > 0 && MyBase::boat_num < BOAT_LIMIT) {
+                    int id = std::rand() % MyBase::boat_purchase_point.size();
+                    if (MyBase::boat_purchase_point.purchase(id)) need_boat--;
+          }
 }
 
 /**
@@ -558,6 +635,11 @@ void perfix_action() noexcept {
 void robot_action() noexcept {
           display(Robot action......\n);
 
+          for (auto &robot : MyFrame::robots) {
+                    // 随机移动测试......
+                    robot.move(std::rand() % POINT);
+          }
+
           /*for (auto &robot : MyFrame::robots) {
                     if (robot.current_path.empty()) {
                               auto router = router_dij(robot);
@@ -579,4 +661,13 @@ void robot_action() noexcept {
 void boat_action() noexcept {
           display(Boat action......\n);
 
+}
+
+void Robot::pull() const noexcept {
+          Robot__::pull();
+          if(-- MyFrame::clock_for_margin_func == 0) {
+                    MyFrame::need_robot++;
+                    // MyFrame::need_boat++;
+                    MyFrame::clock_for_margin_func = MyBase::robot_num + 1;
+          }
 }
