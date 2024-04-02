@@ -742,25 +742,13 @@ Path __trace_back(int const map[N][N], int x, int y, int &distance) noexcept {
 
 typedef bool (*check_position) (int, int);
 inline bool __check_berth(int x, int y) noexcept { return (MyBase::grid[x][y] == 'B'); }
-inline bool __check_good(int x, int y) noexcept {
-          // Storage<GoodStor> &stor = MyFrame::goods;
-          return MyFrame::goods.find_(x, y);
-}
+inline bool __check_good(int x, int y) noexcept { return MyFrame::goods.find_(x, y); }
 inline bool __check_transport(int x, int y) noexcept { return (MyBase::grid[x][y] == 'T'); }
 
 typedef bool (*check_can_move_) (char &);
-// 船和机器人都可以走的地方
-inline bool __both_robot_boat_move(char &c) noexcept {
-          return c == 'C' || c == 'c';
-}
-// 机器人可以走的路
-inline bool __robot_can_move(char &c) noexcept {
-          return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c);
-}
-// 船可以走的路
-inline bool __boat_can_move(char &c) noexcept {
-          return c == '*' || c == '~' || c == 'S' || c == 'K' || c == 'T' || __both_robot_boat_move(c);
-}
+inline bool __both_robot_boat_move(char &c) noexcept { return c == 'C' || c == 'c'; }
+inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
+inline bool __boat_can_move(char &c) noexcept { return c == '*' || c == '~' || c == 'S' || c == 'K' || c == 'T' || __both_robot_boat_move(c); }
 
 std::set<int> seen;
 // 寻找路径，默认只找最近的
@@ -920,6 +908,11 @@ void boat_action() noexcept {
 void suffix_action() noexcept {
           
 }
+
+
+/**
+ * 扩展的Robot动作
+*/
 
 void Robot::get() noexcept {
           Robot__::get();
