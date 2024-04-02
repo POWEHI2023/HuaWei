@@ -759,6 +759,7 @@ inline bool __check_kberth(int x,int y) noexcept { return (MyBase::grid[x][y] ==
 typedef bool (*check_can_move) (char &);
 inline bool __both_robot_boat_move(char &c) noexcept { return c == 'C' || c == 'c'; }
 inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
+// TODO: 船有体积，所以船的移动条件更苛刻
 inline bool __boat_can_move(char &c) noexcept { return c == '*' || c == '~' || c == 'S' || c == 'K' || c == 'T' || __both_robot_boat_move(c); }
 
 std::set<int> seen;
@@ -831,22 +832,22 @@ const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noex
 
                               int distance = distance_[x][y] + 1;
 
-                              if (__robot_can_move(map_[x-1][y]) && distance < distance_[x-1][y]) {
+                              if (__can_move(map_[x-1][y]) && distance < distance_[x-1][y]) {
                                         trace_[x-1][y] = UP;
                                         distance_[x-1][y] = distance;
                                         buff_wait.emplace(x-1, y);
                               }
-                              if (__robot_can_move(map_[x+1][y]) && distance < distance_[x+1][y]) {
+                              if (__can_move(map_[x+1][y]) && distance < distance_[x+1][y]) {
                                         trace_[x+1][y] = DOWN;
                                         distance_[x+1][y] = distance;
                                         buff_wait.emplace(x+1, y);
                               }
-                              if (__robot_can_move(map_[x][y-1]) && distance < distance_[x][y-1]) {
+                              if (__can_move(map_[x][y-1]) && distance < distance_[x][y-1]) {
                                         trace_[x][y-1] = LEFT;
                                         distance_[x][y-1] = distance;
                                         buff_wait.emplace(x, y-1);
                               }
-                              if (__robot_can_move(map_[x][y+1]) && distance < distance_[x][y+1]) {
+                              if (__can_move(map_[x][y+1]) && distance < distance_[x][y+1]) {
                                         trace_[x][y+1] = RIGHT;
                                         distance_[x][y+1] = distance;
                                         buff_wait.emplace(x, y+1);
@@ -979,6 +980,7 @@ void Robot::move(int dir) noexcept {
           }
 }
 
+// TODO: 船有体积，所以移动还是寻路都有限制
 void Boat::ship() noexcept {
           Boat__::ship();
 
