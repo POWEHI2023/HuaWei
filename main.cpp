@@ -208,8 +208,11 @@ struct Good: public BaseElem::Good__ {
 struct Robot: public BaseElem::Robot__ {
           int trace_x = 0, trace_y = 0; // 追踪应该在的位置/ 如果x != trace_x || y != trace_y说明发生了碰撞
           Path current_path;
+          int current_price = 0;
+
           inline void pull() const noexcept;
           inline void move(int) noexcept;
+          inline void get() noexcept;
 };
 
 struct Boat: public BaseElem::Boat__ {
@@ -615,18 +618,27 @@ std::vector< std::vector< std::vector<int> > > MyBase::locks_ = std::vector< std
 
 struct MyFrame: public BaseElem::Frame {
           static int clock_for_margin_func;
-          static int need_robot;
-          static int need_boat;
+          static int clock_id, price_count;
+          static int need_robot, need_boat;
+          static double margin_growth;
 
           static int update() noexcept;
-          static inline void init() noexcept { Frame::init(); }
+          static inline void init() noexcept { 
+                    Frame::init(); 
+
+                    MyFrame::clock_id = MyFrame::id;
+          }
 
           // 购买的动作，是否购买机器人或者船......
           static inline void purchase_action() noexcept;
 };
 int MyFrame::clock_for_margin_func { 1 };
+int MyFrame::clock_id { 0 };
+int MyFrame::price_count { 0 };
 int MyFrame::need_robot { 1 };
 int MyFrame::need_boat { 1 };
+
+double MyFrame::margin_growth { 0 };
 
 /**
  * 主循环
@@ -851,12 +863,36 @@ void suffix_action() noexcept {
           
 }
 
+void Robot::get() noexcept {
+          Robot__::get();
+          
+          int key = as_key(Robot::trace_x, Robot::trace_y);
+          if (MyFrame::goods.find_(key)) {
+                    auto &good = MyFrame::goods.get(key);
+                    current_price = good.price;
+          }
+}
+
 void Robot::pull() const noexcept {
           Robot__::pull();
+
+          // 更新MyFrame判断是否增加机器人的数据
+          MyFrame::price_count += current_price;
+          // 当记时器结束的时候根据 上一次增加机器人后 每帧平均价值判断是否应该增加机器人/ 现在的逻辑是只要大于没增加的就再次增加，
+                    // 可以设置一个阈值，当增加了多少才选择再次增加机器人
           if(-- MyFrame::clock_for_margin_func == 0) {
-                    MyFrame::need_robot++;
-                    // MyFrame::need_boat++;
-                    MyFrame::clock_for_margin_func = MyBase::robot_num + 1;
+                    double current_growth_ = (double)MyFrame::price_count / (double)(MyFrame::id - MyFrame::clock_id);
+                    if (current_growth_ <= MyFrame::margin_growth) 
+                              MyFrame::clock_for_margin_func = MyBase::robot_num;
+                    else {
+                              MyFrame::need_robot++;
+                              if (((MyFrame::need_boat + MyFrame::robots.size()) >> 1) > (MyFrame::need_boat + MyFrame::boats.size())) 
+                                        MyFrame::need_boat++;         // 船的数量为机器人的一半/ 为2的时候是1/4/ 为3的时候是1/8
+                              MyFrame::clock_for_margin_func = MyBase::robot_num + 1;     // 刷新间隔增加
+                    }
+
+                    MyFrame::clock_id = MyFrame::id;
+                    MyFrame::price_count = 0;
           }
 }
 
