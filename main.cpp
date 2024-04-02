@@ -12,16 +12,18 @@
  *        ::: 关于是否购买机器人
  *        初始时购买机器人和船的数量都是1
  *        当执行到purchase_action时判断是否need_robot或者need_boat大于0，当大于0时执行购买指令
- *        当机器人pull货物到泊点时更新送货的价值曲线，是否因为上一次的增加机器人而导致`帧数/搬运价值`增加 [相关逻辑还没有实现]
+ *        当机器人pull货物到泊点时更新送货的价值曲线，是否因为上一次的增加机器人而导致`帧数/搬运价值`增加 [相关逻辑还没有实现/ 实现了]
  *        如果增加的话说明可以再次购买机器人，最多购买ROBOT_LIMIT个机器人
  * 
  *        ::: 关于是否购买船
- *        购买船的逻辑还没有写，只有初始购买的1艘船
+ *        购买船的逻辑还没有写，只有初始购买的1艘船/ 部分实现
  * 
  *        ::: 关于机器人的移动碰撞检测
  *        由于没有相关状态检测机器人是否异常/ 碰撞不会导致停顿
  *        为每个机器人设置trace_x和trace_y，每次移动更新两个的值
  *        每一帧刷新后如果机器人移动正常trace_x和trace_y应该等于x和y，如果不等于则发生了碰撞
+ * 
+ *        目前发生碰撞会忘掉之前的路重新找路
  * 
 */
 
@@ -885,16 +887,17 @@ void robot_action() noexcept {
                     
                     auto &path = robot.current_path;
                     
-                    if (path.cursor >= 0) { // DEBUG时候必须有if，因为不会在没路以后再找路
-                              robot.move(path[path.cursor--]);
-                    } else if (path.cursor < 0) { //路径走完了
+                    // if (path.cursor >= 0) { // DEBUG时候必须有if，因为不会在没路以后再找路
+                    robot.move(path[path.cursor--]);
+                    /*} else*/ 
+                    if (path.cursor < 0) { //路径走完了
                               // 随机移动测试......
                               // robot.move(std::rand() % POINT);
                               display(::: Robot goods_num: %d\n, robot.goods_num);
                               
-                              if (robot.goods_num) { /*robot.pull();*/ }
+                              if (robot.goods_num) robot.pull();
                               else robot.get();
-                              
+                              robot.current_path.clear();   // 走完整条路径，忘掉之前的路径
                     }
           }
 
