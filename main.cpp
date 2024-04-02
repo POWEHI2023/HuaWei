@@ -238,7 +238,7 @@ namespace BaseElem {
           class BerthStor: public BerthStor__, public IfStor__<BerthStor> {
           public:
                     template <typename... TArgs>
-                    BerthStor(TArgs... args): BerthStor__(std::forward<TArgs>(args)...) {}
+                    explicit BerthStor(TArgs... args): BerthStor__(std::forward<TArgs>(args)...) {}
 
                     /** 
                      * 寻找一个符合条件的值，是否符合条件由参数cmp判断
@@ -284,7 +284,7 @@ namespace BaseElem {
           class GoodStor: public GoodStor__, public IfStor__<GoodStor> {
           public:
                     template <typename... TArgs>
-                    GoodStor(TArgs... args): GoodStor__(std::forward<TArgs>(args)...) {}
+                    explicit GoodStor(TArgs... args): GoodStor__(std::forward<TArgs>(args)...) {}
 
                     // 货物就只有一个x、y，所以直接返回bool
                     inline bool find_(int key) noexcept { return (GoodStor__::find(key) != GoodStor__::end()); }
@@ -608,8 +608,6 @@ struct MyBase: public BaseElem::Base {
                     Base::init();
                     // int [N][N][ROBOT_NUM]
                     locks_.resize(N, std::vector< std::vector<int> >(N, std::vector<int>(ROBOT_LIMIT, 0)));
-
-                    // 关于不同purchase位周围的
           }
 };
 // int ***MyBase::locks_ = NULL;
@@ -621,11 +619,7 @@ struct MyFrame: public BaseElem::Frame {
           static int need_boat;
 
           static int update() noexcept;
-
-          static inline void init() noexcept {
-                    Frame::init();
-
-          }
+          static inline void init() noexcept { Frame::init(); }
 
           // 购买的动作，是否购买机器人或者船......
           static inline void purchase_action() noexcept;
