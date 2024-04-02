@@ -232,6 +232,7 @@ struct Boat: public BaseElem::Boat__ {
           bool can_leave = false;
           Berth *aim = nullptr;
 
+          inline void ship() noexcept;
 };
 
 /**
@@ -740,12 +741,22 @@ Path __trace_back(int const map[N][N], int x, int y, int &distance) noexcept {
           return ret;
 }
 
+/**
+ * 筛选路径，只保留一条路径并且对路径进行避免碰撞的操作
+ *        ::: 如果不在规划路径时进行碰撞规避，那就只筛选出一条路径
+*/
+inline Path __sift_and_lock(std::vector<Path> &path) noexcept {
+          if (path.empty()) return Path();        // 没有找到路径
+          return path[0];     // 目前router_dij就找了一条路
+}
+
 typedef bool (*check_position) (int, int);
 inline bool __check_berth(int x, int y) noexcept { return (MyBase::grid[x][y] == 'B'); }
 inline bool __check_good(int x, int y) noexcept { return MyFrame::goods.find_(x, y); }
 inline bool __check_transport(int x, int y) noexcept { return (MyBase::grid[x][y] == 'T'); }
+inline bool __check_kberth(int x,int y) noexcept { return (MyBase::grid[x][y] == 'K'); }
 
-typedef bool (*check_can_move_) (char &);
+typedef bool (*check_can_move) (char &);
 inline bool __both_robot_boat_move(char &c) noexcept { return c == 'C' || c == 'c'; }
 inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
 inline bool __boat_can_move(char &c) noexcept { return c == '*' || c == '~' || c == 'S' || c == 'K' || c == 'T' || __both_robot_boat_move(c); }
@@ -753,21 +764,21 @@ inline bool __boat_can_move(char &c) noexcept { return c == '*' || c == '~' || c
 std::set<int> seen;
 // 寻找路径，默认只找最近的
 template <typename T>         // 只能是机器人或者船
-const std::vector<Path> router_dij(const T &robot, size_t cap = 1) noexcept {
+const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noexcept {
           auto &map_ = MyBase::grid;
           auto &locks_ = MyBase::locks_;
-          check_position check_ = NULL;
-          check_can_move_ __can_move = NULL;      // 目前只能用于机器人
+          check_position __check = NULL;
+          check_can_move __can_move = NULL;      // 目前只能用于机器人
 
           if constexpr (std::is_same_v<T, Robot>) {         // 机器人的指令
                     __can_move = __robot_can_move;
-                    check_ = robot.goods_num ? (__check_berth) : (__check_good);
+                    __check = robot.goods_num ? (__check_berth) : (__check_good);
           } else if constexpr (std::is_same_v<T, Boat>) {
                     __can_move = __boat_can_move;      // 意味着这个还不能很好工作/ 未经测试的
-                    check_ = robot.can_leave ? (__check_transport) : (__check_berth);
+                    __check = robot.can_leave ? (__check_transport) : (__check_kberth);
           } else {
                     display(::: [非法的Router类型]只能为Robot或者Boat寻路......\n);
-                    return {};
+                    return Path();
           }
           
           
@@ -789,11 +800,18 @@ const std::vector<Path> router_dij(const T &robot, size_t cap = 1) noexcept {
                     auto buff_wait = std::set<Position>();
                     CYCLE__: for (auto &pos : wait_) {
                               auto [x, y] = pos;
-                              if (check_(x, y) && seen.find(as_key(x, y)) == seen.end()) {
+                              if (__check(x, y) && seen.find(as_key(x, y)) == seen.end()) {
                                         display(Find target ? %d\n, MyFrame::goods.find_(as_key(x, y)));
 
                                         // 可以容忍的距离/ 去泊点无所谓距离/ 去货物只能容忍货物的存在帧
-                                        int tolance_ = robot.goods_num ? -1 : MyFrame::goods[as_key(x, y)].live;
+                                        int tolance_ = ({
+                                                  int ret;
+                                                  if constexpr (std::is_same_v<T, Robot>) 
+                                                            ret = robot.goods_num ? -1 : MyFrame::goods[as_key(x, y)].live;
+                                                  else ret = -1;      // 船去泊点和卸货点，两个点都不会消失，所以可以容忍无限距离
+                                                  ret;
+                                        });
+
                                         display(tolance_: %d and distance_: %d\n, tolance_, distance_[x][y]);
 
                                         if (tolance_ == -1 || distance_[x][y] <= tolance_) {
@@ -839,7 +857,8 @@ const std::vector<Path> router_dij(const T &robot, size_t cap = 1) noexcept {
                     goto CYCLE__;
                     
           } ();
-          return ret;
+
+          return __sift_and_lock(ret);
 }
 
 // 在机器人和船行动前先进行的操作
@@ -874,7 +893,7 @@ void robot_action() noexcept {
                               if (router.empty()) continue;
 
                               // 目前就一条路径
-                              robot.current_path = std::move(router[0]);
+                              robot.current_path = std::move(router);
                               if (robot.current_path.type_ == GOOD) {
                                         MyFrame::goods.erase(as_key(robot.current_path.tar_x, robot.current_path.tar_y));
                               }
@@ -958,4 +977,9 @@ void Robot::move(int dir) noexcept {
                               display(::: Unknown direction[%d]......\n, dir);
                     }
           }
+}
+
+void Boat::ship() noexcept {
+          Boat__::ship();
+
 }
