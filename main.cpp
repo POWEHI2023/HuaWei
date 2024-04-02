@@ -13,6 +13,65 @@
 #include <set>
 #include <cassert>
 
+
+/**
+ * 线程池实现
+*/
+
+class ThreadPool {
+public:
+          struct Task {
+
+          };
+          // typedef std::priority_queue<>
+
+          inline int append_tack() noexcept {
+
+                    return task_id++;
+          }
+
+private:
+          size_t task_id, min_id;
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #define N 200
 #define BOAT_PRICE 8000
 #define ROBOT_PRICE 2000
@@ -61,6 +120,7 @@ private:
 void perfix_action() noexcept;          // 预备动作
 void robot_action() noexcept;           // 机器人做出动作
 void boat_action() noexcept;            // 船做出动作
+void suffix_action() noexcept;
 
 /**
  * 四个地图上的基本元素 [基本不会被修改]
@@ -116,8 +176,10 @@ struct Good: public BaseElem::Good__ {
 };
 
 struct Robot: public BaseElem::Robot__ {
+          int trace_x = 0, trace_y = 0; // 追踪应该在的位置/ 如果x != trace_x || y != trace_y说明发生了碰撞
           Path current_path;
           inline void pull() const noexcept;
+          inline void move(int) noexcept;
 };
 
 struct Boat: public BaseElem::Boat__ {
@@ -228,14 +290,14 @@ namespace BaseElem {
           // Base
           struct Base {
                     static inline void init() noexcept {
-                              display(Base init......\n);
+                              // display(Base init......\n);
 
                               grid = (char **)malloc(N * sizeof(char *));
                               for (int i = 0; i < N; ++i) grid[i] = (char *)malloc(N * sizeof(char));
 
                               for (int i = 0; i < N; ++i) scanf("%s", grid[i]);
                               Base::ProcessMap();
-                              Base::DisplayMap();
+                              // Base::DisplayMap();
 
                               scanf("%d", &berth_num);
                               berths.resize(berth_num);
@@ -280,7 +342,7 @@ namespace BaseElem {
                     static int gap_id;  // 与上一次update之间差了几帧
                     
                     static inline void init() noexcept {
-                              display(Frame init......\n);
+                              // display(Frame init......\n);
 
                               // Frame::robots.resize(ROBOT_NUM);
                               // Frame::boats.resize(BOAT_NUM);
@@ -310,11 +372,16 @@ namespace BaseElem {
                                         fprintf(stderr, "Purchae id out of boundary......\n");
                                         return false;
                               }
-                              display(Buy something in purchase id: %d\n, purchase_id);
+                              // display(Buy something in purchase id: %d\n, purchase_id);
                               if constexpr (std::is_same_v<T, Robot>) {
                                         if (Frame::money < ROBOT_PRICE) return false;
                                         Base::robot_num++; Frame::money -= ROBOT_PRICE;   // 更新数据
-                                        printf("lbot %d %d\n", (*this)[purchase_id].first, (*this)[purchase_id].second); 
+                                        auto &[pur_x, pur_y] = (*this)[purchase_id];
+                                        printf("lbot %d %d\n", pur_x, pur_y);
+                                        Frame::robots.push_back(Robot{
+                                                  (int)Frame::robots.size(), pur_x, pur_y, 0,       // id/ x/ y/ goods_num
+                                                  pur_x, pur_y                                      // trace_x/ trace_y
+                                        });
                               } else {
                                         if (Frame::money < BOAT_PRICE) return false;
                                         Base::boat_num++; Frame::money -= BOAT_PRICE;
@@ -335,12 +402,12 @@ namespace BaseElem {
                     }
 
                     inline void append_good(const int id, const Good &good) noexcept {
-                              display(Purchase %d append good[%d %d %d %d %d]\n, id, good.x, good.y, good.price, good.purchase_rank, good.live);
+                              // display(Purchase %d append good[%d %d %d %d %d]\n, id, good.x, good.y, good.price, good.purchase_rank, good.live);
 
                               good_in_range[id].num ++;
                               good_in_range[id].price += good.price;
 
-                              display(Out append_good(const int, const Good &)\n);
+                              // display(Out append_good(const int, const Good &)\n);
                     }
 
                     inline void remove_good(const int id, const Good &good) noexcept {
@@ -410,13 +477,11 @@ namespace BaseElem {
 
           std::vector<int> buffer;
           int Frame::update() noexcept {
-                    display(Frame update......\n);
+                    // display(Frame update......\n);
 
                     int crt_id, good_num;
                     if (scanf("%d%d", &crt_id, &money) == EOF) return -1;
                     gap_id = crt_id - id;
-
-                    display(::: Processing new goods......\n);
 
                     scanf("%d", &good_num);
                     buffer.clear();
@@ -429,8 +494,6 @@ namespace BaseElem {
                     }
                     for (auto &x : buffer) goods.erase(x);
                     id = crt_id;
-
-                    display(::: Outdate goods removed......\n);
 
                     for (int i = 0; i < good_num; ++i) {
                               int x, y, price;
@@ -448,30 +511,29 @@ namespace BaseElem {
                                                   }
                                         }
                                         assert(pur_id != -1);         // 检查一定是找到了一个位置
-                                        display(CHECK POS1\n);
 
                                         // good属于离他最近的purchase
                                         auto ret = Good(x, y, price, pur_id, 1000);
-                                        display(CHECK POS1.5\n);
                                         Base::robot_purchase_point.append_good(pur_id, ret);
-
-                                        display(CHECK POS2\n);
                                         
                                         // 返回good
                                         std::move(ret);
                               });
                     }
 
-                    display(::: Process new goods over......\n);
-
                     int robot_num;
                     scanf("%d", &robot_num);
                     // check the number of robot is right
-                    display(RobotNum: %d and BaseRobotNum: %d\n, robot_num, Base::robot_num);
                     assert(robot_num == Base::robot_num);
                     robots.resize(robot_num);     // 确保有足够的位置
                     for (int i = 0; i < Base::robot_num; ++i) {
-                              scanf("%d%d%d%d", &robots[i].id, &robots[i].goods_num, &robots[i].x, &robots[i].y);
+
+                              // 机器人信息来的顺序保持为 0 - n ？
+                              int id;
+                              scanf("%d", &id);
+                              // scanf("%d%d%d%d", &robots[i].id, &robots[i].goods_num, &robots[i].x, &robots[i].y);
+                              robots[id].id = id;
+                              scanf("%d%d%d", &robots[id].goods_num, &robots[id].x, &robots[id].y);
                     }
 
                     int boat_num;
@@ -569,7 +631,7 @@ int MyFrame::update() noexcept {
           perfix_action(), robot_action(), boat_action();
 
           // 购买动作
-          purchase_action();
+          purchase_action(), suffix_action();
 
           // 提交这一帧的操作
           CHECK_OK();
@@ -581,7 +643,7 @@ int MyFrame::update() noexcept {
  * 购买机器人或者船
 */
 void MyFrame::purchase_action() noexcept {
-          display(Purchase action......\n);
+          // display(Purchase action......\n);
 
           if (need_robot > 0 && MyBase::robot_num < ROBOT_LIMIT) {
                     int id = std::rand() % MyBase::robot_purchase_point.size();
@@ -707,11 +769,24 @@ const std::vector<Path> router_dij(const Robot &robot, size_t cap = 1) noexcept 
 
 // 在机器人和船行动前先进行的操作
 void perfix_action() noexcept {
-          display(Perfix action......\n);
+          // display(Perfix action......\n);
+
+          // 检查机器人位置的正确性
+          for (auto &robot : MyFrame::robots) {
+                    // assert(robot.x == robot.trace_x);
+                    // assert(robot.y == robot.trace_y);
+                    display(Robot %d: [x: %d and trace_x: %d] [y: %d and trace_t: %d]\n, robot.id, robot.x, robot.trace_x, robot.y, robot.trace_y);
+                    if (robot.x != robot.trace_x || robot.y != robot.trace_y) {
+                              display(::: 机器人 %d 发生了碰撞[frame id %d]\n, robot.id, MyFrame::id);
+                              // 归位
+                              robot.trace_x = robot.x;
+                              robot.trace_y = robot.y;
+                    }
+          }
 }
 // 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物
 void robot_action() noexcept {
-          display(Robot action......\n);
+          // display(Robot action......\n);
 
           for (auto &robot : MyFrame::robots) {
                     // 随机移动测试......
@@ -737,8 +812,12 @@ void robot_action() noexcept {
 }
 // 船的操作/ 分配泊点/ 装卸货物
 void boat_action() noexcept {
-          display(Boat action......\n);
+          // display(Boat action......\n);
 
+}
+
+void suffix_action() noexcept {
+          
 }
 
 void Robot::pull() const noexcept {
@@ -747,5 +826,18 @@ void Robot::pull() const noexcept {
                     MyFrame::need_robot++;
                     // MyFrame::need_boat++;
                     MyFrame::clock_for_margin_func = MyBase::robot_num + 1;
+          }
+}
+
+void Robot::move(int dir) noexcept {
+          Robot__::move(dir);
+          switch (dir) {
+                    case UP: trace_x--; break;
+                    case DOWN: trace_x++; break;
+                    case LEFT: trace_y--; break;
+                    case RIGHT: trace_y++; break;
+                    default: {
+                              display(::: Unknown direction[%d]......\n, dir);
+                    }
           }
 }
