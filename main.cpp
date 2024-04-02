@@ -746,7 +746,9 @@ inline bool __check_good(int x, int y) noexcept {
           // Storage<GoodStor> &stor = MyFrame::goods;
           return MyFrame::goods.find_(x, y);
 }
+inline bool __check_transport(int x, int y) noexcept { return (MyBase::grid[x][y] == 'T'); }
 
+typedef bool (*check_can_move_) (char &);
 // 船和机器人都可以走的地方
 inline bool __both_robot_boat_move(char &c) noexcept {
           return c == 'C' || c == 'c';
@@ -762,10 +764,24 @@ inline bool __boat_can_move(char &c) noexcept {
 
 std::set<int> seen;
 // 寻找路径，默认只找最近的
-const std::vector<Path> router_dij(const Robot &robot, size_t cap = 1) noexcept {
+template <typename T>         // 只能是机器人或者船
+const std::vector<Path> router_dij(const T &robot, size_t cap = 1) noexcept {
           auto &map_ = MyBase::grid;
           auto &locks_ = MyBase::locks_;
-          check_position check_ = robot.goods_num ? (__check_berth) : (__check_good);
+          check_position check_ = NULL;
+          check_can_move_ __can_move = NULL;      // 目前只能用于机器人
+
+          if constexpr (std::is_same_v<T, Robot>) {         // 机器人的指令
+                    __can_move = __robot_can_move;
+                    check_ = robot.goods_num ? (__check_berth) : (__check_good);
+          } else if constexpr (std::is_same_v<T, Boat>) {
+                    __can_move = __boat_can_move;      // 意味着这个还不能很好工作/ 未经测试的
+                    check_ = robot.can_leave ? (__check_transport) : (__check_berth);
+          } else {
+                    display(::: [非法的Router类型]只能为Robot或者Boat寻路......\n);
+                    return {};
+          }
+          
           
           int trace_[N][N];             
           int distance_[N][N];          
@@ -861,11 +877,6 @@ void perfix_action() noexcept {
 void robot_action() noexcept {
           // display(Robot action......\n);
 
-          /*for (auto &robot : MyFrame::robots) {
-                    // 随机移动测试......
-                    robot.move(std::rand() % POINT);
-          }*/
-
           for (auto &robot : MyFrame::robots) {
                     if (robot.collision) robot.current_path.clear(), robot.collision = false;  // 碰撞之后重新寻路
                     // 机器人寻路，一帧中最多找ROUTER_LIMIT_PER_FRAME次路
@@ -891,8 +902,6 @@ void robot_action() noexcept {
                     robot.move(path[path.cursor--]);
                     /*} else*/ 
                     if (path.cursor < 0) { //路径走完了
-                              // 随机移动测试......
-                              // robot.move(std::rand() % POINT);
                               display(::: Robot goods_num: %d\n, robot.goods_num);
                               
                               if (robot.goods_num) robot.pull();
