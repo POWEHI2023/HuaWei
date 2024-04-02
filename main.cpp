@@ -109,6 +109,8 @@ private:
 #define ROBOT_LIMIT 20        // 设置一个最大量
 #define BOAT_LIMIT 10         // 设置一个最大量
 
+#define ROUTER_LIMIT_PER_FRAME 5        // 每帧最多找几次路
+
 #define display(msg, ...) ({ fprintf(stderr, #msg, ##__VA_ARGS__); })
 #define CHECK_OK() ({ char okk[100]; scanf("%s", okk); })
 
@@ -132,14 +134,20 @@ enum TraceType { GOOD, BERTH, None };
 // 用来构造路径
 Path __trace_back(int const map[N][N], int x, int y, int & distance) noexcept;
 
+/**
+ * 路径指针，用来移动
+ * tar参数为目标位置
+ * TraceType为寻路的目标类型
+ * distance为路径距离
+*/
 class Path: public Path__ {
 public:
           template <typename... TArgs>
           Path(TArgs... args): Path__(std::forward<TArgs>(args)...), distance(0), cursor(-1), tar_x(0), tar_y(0), type_(None) {}
           // Path(int cap = 0): Path__(cap), distance(0) {}
-          int inline get_distance() const noexcept { return distance; }
+          int inline get_distance() const noexcept { return distance - Path__::size() + cursor + 1; }
 
-          size_t cursor;      // 指针从后往前
+          int cursor;      // 指针从后往前
           int tar_x, tar_y;
           TraceType type_;
 private:
@@ -207,6 +215,8 @@ struct Good: public BaseElem::Good__ {
 
 struct Robot: public BaseElem::Robot__ {
           int trace_x = 0, trace_y = 0; // 追踪应该在的位置/ 如果x != trace_x || y != trace_y说明发生了碰撞
+          bool collision = false;
+
           Path current_path;
           int current_price = 0;
 
@@ -621,6 +631,7 @@ struct MyFrame: public BaseElem::Frame {
           static int clock_id, price_count;
           static int need_robot, need_boat;
           static double margin_growth;
+          static int router_times;
 
           static int update() noexcept;
           static inline void init() noexcept { 
@@ -637,6 +648,7 @@ int MyFrame::clock_id { 0 };
 int MyFrame::price_count { 0 };
 int MyFrame::need_robot { 1 };
 int MyFrame::need_boat { 1 };
+int MyFrame::router_times { 0 };
 
 double MyFrame::margin_growth { 0 };
 
@@ -686,7 +698,6 @@ int MyFrame::update() noexcept {
 */
 void MyFrame::purchase_action() noexcept {
           // display(Purchase action......\n);
-
           if (need_robot > 0 && MyBase::robot_num < ROBOT_LIMIT) {
                     int id = MyBase::robot_purchase_point.find_purchase();
                     display(Buy a robot purchase id %d......\n, id);
@@ -734,12 +745,25 @@ inline bool __check_good(int x, int y) noexcept {
           return MyFrame::goods.find_(x, y);
 }
 
-/*std::set<int> seen;
+// 船和机器人都可以走的地方
+inline bool __both_robot_boat_move(char &c) noexcept {
+          return c == 'C' || c == 'c';
+}
+// 机器人可以走的路
+inline bool __robot_can_move(char &c) noexcept {
+          return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c);
+}
+// 船可以走的路
+inline bool __boat_can_move(char &c) noexcept {
+          return c == '*' || c == '~' || c == 'S' || c == 'K' || c == 'T' || __both_robot_boat_move(c);
+}
+
+std::set<int> seen;
 // 寻找路径，默认只找最近的
 const std::vector<Path> router_dij(const Robot &robot, size_t cap = 1) noexcept {
           auto &map_ = MyBase::grid;
           auto &locks_ = MyBase::locks_;
-          check_position check_ = robot.take_good ? (__check_berth) : (__check_good);
+          check_position check_ = robot.goods_num ? (__check_berth) : (__check_good);
           
           int trace_[N][N];             
           int distance_[N][N];          
@@ -760,14 +784,16 @@ const std::vector<Path> router_dij(const Robot &robot, size_t cap = 1) noexcept 
                     CYCLE__: for (auto &pos : wait_) {
                               auto [x, y] = pos;
                               if (check_(x, y) && seen.find(as_key(x, y)) == seen.end()) {
+                                        display(Find target ? %d\n, MyFrame::goods.find_(as_key(x, y)));
+
                                         // 可以容忍的距离/ 去泊点无所谓距离/ 去货物只能容忍货物的存在帧
-                                        int tolance_ = robot.take_good ? -1 : std::get<1>(MyFrame::goods[as_key(x, y)]);
+                                        int tolance_ = robot.goods_num ? -1 : MyFrame::goods[as_key(x, y)].live;
                                         display(tolance_: %d and distance_: %d\n, tolance_, distance_[x][y]);
 
                                         if (tolance_ == -1 || distance_[x][y] <= tolance_) {
-                                                  display(Find target_......\n);
+                                                  // display(Find target_......\n);
                                                   auto path = __trace_back(trace_ , x, y, distance_[x][y]);
-                                                  path.type_ = robot.take_good ? BERTH : GOOD;
+                                                  path.type_ = robot.goods_num ? BERTH : GOOD;
 
                                                   ret.emplace_back(path);
                                                   seen.emplace(as_key(x, y));
@@ -781,22 +807,22 @@ const std::vector<Path> router_dij(const Robot &robot, size_t cap = 1) noexcept 
 
                               int distance = distance_[x][y] + 1;
 
-                              if (map_[x-1][y] != '#' && map_[x-1][y] != '*' && distance < distance_[x-1][y]) {
+                              if (__robot_can_move(map_[x-1][y]) && distance < distance_[x-1][y]) {
                                         trace_[x-1][y] = UP;
                                         distance_[x-1][y] = distance;
                                         buff_wait.emplace(x-1, y);
                               }
-                              if (map_[x+1][y] != '#' && map_[x+1][y] != '*' && distance < distance_[x+1][y]) {
+                              if (__robot_can_move(map_[x+1][y]) && distance < distance_[x+1][y]) {
                                         trace_[x+1][y] = DOWN;
                                         distance_[x+1][y] = distance;
                                         buff_wait.emplace(x+1, y);
                               }
-                              if (map_[x][y-1] != '#' && map_[x][y-1] != '*' && distance < distance_[x][y-1]) {
+                              if (__robot_can_move(map_[x][y-1]) && distance < distance_[x][y-1]) {
                                         trace_[x][y-1] = LEFT;
                                         distance_[x][y-1] = distance;
                                         buff_wait.emplace(x, y-1);
                               }
-                              if (map_[x][y+1] != '#' && map_[x][y+1] != '*' && distance < distance_[x][y+1]) {
+                              if (__robot_can_move(map_[x][y+1]) && distance < distance_[x][y+1]) {
                                         trace_[x][y+1] = RIGHT;
                                         distance_[x][y+1] = distance;
                                         buff_wait.emplace(x, y+1);
@@ -808,12 +834,13 @@ const std::vector<Path> router_dij(const Robot &robot, size_t cap = 1) noexcept 
                     
           } ();
           return ret;
-}*/
+}
 
 // 在机器人和船行动前先进行的操作
 void perfix_action() noexcept {
           // display(Perfix action......\n);
 
+          MyFrame::router_times = 0;    // 找路次数清零
           // 检查机器人位置的正确性
           for (auto &robot : MyFrame::robots) {
                     // assert(robot.x == robot.trace_x);
@@ -822,23 +849,27 @@ void perfix_action() noexcept {
                     if (robot.x != robot.trace_x || robot.y != robot.trace_y) {
                               display(::: 机器人 %d 发生了碰撞[frame id %d]\n, robot.id, MyFrame::id);
                               // 归位
+                              robot.collision = true;
                               robot.trace_x = robot.x;
                               robot.trace_y = robot.y;
                     }
           }
 }
-// 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物
+// 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作]
 void robot_action() noexcept {
           // display(Robot action......\n);
 
-          for (auto &robot : MyFrame::robots) {
+          /*for (auto &robot : MyFrame::robots) {
                     // 随机移动测试......
                     robot.move(std::rand() % POINT);
-          }
+          }*/
 
-          /*for (auto &robot : MyFrame::robots) {
-                    if (robot.current_path.empty()) {
+          for (auto &robot : MyFrame::robots) {
+                    if (robot.collision) robot.current_path.clear(), robot.collision = false;  // 碰撞之后重新寻路
+                    // 机器人寻路，一帧中最多找ROUTER_LIMIT_PER_FRAME次路
+                    if (robot.current_path.empty() && MyFrame::router_times < ROUTER_LIMIT_PER_FRAME) {
                               auto router = router_dij(robot);
+                              MyFrame::router_times++;      // 找路次数加一
                               if (router.empty()) continue;
 
                               // 目前就一条路径
@@ -846,11 +877,26 @@ void robot_action() noexcept {
                               if (robot.current_path.type_ == GOOD) {
                                         MyFrame::goods.erase(as_key(robot.current_path.tar_x, robot.current_path.tar_y));
                               }
+                              
                     }
 
-                    // if (router.empty()) display(Empty Path! \n);
-                    // else display(Path Distance: %d \n, router[0].get_distance());
-          }*/
+                    if (robot.current_path.empty()) continue;
+                    // 机器人移动
+                    
+                    auto &path = robot.current_path;
+                    
+                    if (path.cursor >= 0) { // DEBUG时候必须有if，因为不会在没路以后再找路
+                              robot.move(path[path.cursor--]);
+                    } else if (path.cursor < 0) { //路径走完了
+                              // 随机移动测试......
+                              // robot.move(std::rand() % POINT);
+                              display(::: Robot goods_num: %d\n, robot.goods_num);
+                              
+                              if (robot.goods_num) { /*robot.pull();*/ }
+                              else robot.get();
+                              
+                    }
+          }
 
 }
 // 船的操作/ 分配泊点/ 装卸货物
