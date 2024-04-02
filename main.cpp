@@ -1,3 +1,33 @@
+
+/**
+ * 当前实现策略：
+ *        开始时init初始化Base和Frame
+ *        每一帧首先调用update更新参数
+ *        然后按照perfix、robot、boat、purchase、suffix的顺序执行动作
+ *        
+ *        ::: 关于购买
+ *        目前在更新新货物信息时，会把货物归类到离他最近的purchase
+ *        购买机器人时，判断哪一个purchase范围内货物价值密度最高，在最高的purchase点购买机器人
+ * 
+ *        ::: 关于是否购买机器人
+ *        初始时购买机器人和船的数量都是1
+ *        当执行到purchase_action时判断是否need_robot或者need_boat大于0，当大于0时执行购买指令
+ *        当机器人pull货物到泊点时更新送货的价值曲线，是否因为上一次的增加机器人而导致`帧数/搬运价值`增加 [相关逻辑还没有实现]
+ *        如果增加的话说明可以再次购买机器人，最多购买ROBOT_LIMIT个机器人
+ * 
+ *        ::: 关于是否购买船
+ *        购买船的逻辑还没有写，只有初始购买的1艘船
+ * 
+ *        ::: 关于机器人的移动碰撞检测
+ *        由于没有相关状态检测机器人是否异常/ 碰撞不会导致停顿
+ *        为每个机器人设置trace_x和trace_y，每次移动更新两个的值
+ *        每一帧刷新后如果机器人移动正常trace_x和trace_y应该等于x和y，如果不等于则发生了碰撞
+ * 
+*/
+
+
+
+
 #include <iostream>
 #include <memory>
 #include <algorithm>
@@ -418,6 +448,20 @@ namespace BaseElem {
                               record_check__();
                     }
 
+                    inline double find_purchase() const noexcept {
+                              double density_ = 0;
+                              int ret = 0, ptr = 0;
+                              for (auto &[num, price] : good_in_range) {
+                                        double den_ = (double)price / (double)num;
+                                        if (den_ > density_) {
+                                                  density_ = den_;
+                                                  ret = ptr;
+                                        }
+                                        ptr++;
+                              }
+                              return ret;
+                    }
+
           private:
                     inline void record_check__() const noexcept {
                               for (auto &rec : good_in_range) 
@@ -619,14 +663,6 @@ int MyFrame::update() noexcept {
           // 扩充的update信息
           // ...
 
-          // display(CHECK RUNNING......\n);
-          /*for (auto &robot : robots) {
-                    display(Robot %d: [%d %d]\n, robot.id, robot.x, robot.y);
-          }
-          for (auto &&[k, v] : goods) {
-                    display(Good %d: [price: %d][live: %d]\n, k, std::get<0>(v), std::get<1>(v));
-          }*/
-
           // 准备动作/ 机器人动作/ 船最后动
           perfix_action(), robot_action(), boat_action();
 
@@ -646,7 +682,8 @@ void MyFrame::purchase_action() noexcept {
           // display(Purchase action......\n);
 
           if (need_robot > 0 && MyBase::robot_num < ROBOT_LIMIT) {
-                    int id = std::rand() % MyBase::robot_purchase_point.size();
+                    int id = MyBase::robot_purchase_point.find_purchase();
+                    display(Buy a robot purchase id %d......\n, id);
                     if (MyBase::robot_purchase_point.purchase(id)) need_robot--;
           }
 
