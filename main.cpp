@@ -106,7 +106,15 @@ struct Berth: public BaseElem::Berth__ {
           int crt_num = 0;
 
 };
-struct Good: public BaseElem::Good__ {};
+struct Good: public BaseElem::Good__ {
+          int purchase_rank = 0;
+          int live = 1000;              // 全部存活时间
+
+          Good(): Good__{0, 0, 0}, purchase_rank(-1), live(0) {}
+          Good(int x, int y, int price, int purchase_rank, int live): Good__{x, y, price},
+           purchase_rank(purchase_rank), live(live) {}
+};
+
 struct Robot: public BaseElem::Robot__ {
           Path current_path;
           inline void pull() const noexcept;
@@ -133,7 +141,7 @@ namespace BaseElem {
           };
 
           typedef std::vector<Berth> BerthStor__;
-          typedef std::unordered_map<int, std::tuple<int, int>> GoodStor__;
+          typedef std::unordered_map<int, Good> GoodStor__;
 
           class BerthStor: public BerthStor__, public IfStor__<BerthStor> {
           public:
@@ -285,65 +293,6 @@ namespace BaseElem {
           };
 
           /**
-           * Frame部分
-          */
-
-          int Frame::id = 0;
-          int Frame::gap_id = 0;
-          int Frame::money = 0;
-          GoodStor Frame::goods = GoodStor();
-          std::vector<Robot> Frame::robots = std::vector<Robot>();
-          std::vector<Boat> Frame::boats = std::vector<Boat>();
-
-          std::vector<int> buffer;
-          int Frame::update() noexcept {
-                    display(Frame update......\n);
-
-                    int crt_id, good_num;
-                    if (scanf("%d%d", &crt_id, &money) == EOF) return -1;       // 第一行输入2个整数
-                    gap_id = crt_id - id;
-
-                    scanf("%d", &good_num);       // == == == MARK == == ==     // 第二行输入1个整数
-                    buffer.clear();
-                    for (auto &&[k, v] : goods) {
-                              std::get<1>(v) -= gap_id;
-                              if (std::get<1>(v) <= 0) buffer.push_back(k);
-                    }
-                    for (auto &x : buffer) goods.erase(x);
-                    id = crt_id;
-
-                    for (int i = 0; i < good_num; ++i) {
-                              int x, y, price;
-                              scanf("%d%d%d", &x, &y, &price);
-                              // record good when price bigger than 0
-                              if (price != 0) goods[as_key(x, y)] = {price, 1000};
-                    }
-
-                    int robot_num;
-                    scanf("%d", &robot_num);
-                    // check the number of robot is right
-                    display(RobotNum: %d and BaseRobotNum: %d\n, robot_num, Base::robot_num);
-                    assert(robot_num == Base::robot_num);
-                    robots.resize(robot_num);     // 确保有足够的位置
-                    for (int i = 0; i < Base::robot_num; ++i) {
-                              scanf("%d%d%d%d", &robots[i].id, &robots[i].goods_num, &robots[i].x, &robots[i].y);
-                    }
-
-                    int boat_num;
-                    scanf("%d", &boat_num);
-                    // check......
-                    assert(boat_num == Base::boat_num);
-                    boats.resize(boat_num);       // 确保有足够的位置
-                    for (int i = 0; i < Base::boat_num; ++i) {
-                              scanf("%d%d%d%d%d%d", &boats[i].id, &boats[i].goods_num, &boats[i].x, &boats[i].y, &boats[i].dir, &boats[i].status);
-                    }
-
-                    // char okk[100];
-                    // scanf("%s", okk);
-                    return id;
-          }
-
-          /**
            * Purchase部分
           */
 
@@ -351,7 +300,9 @@ namespace BaseElem {
           class PurchasePoint: public PurchasePoint__ {
           public:
                     template <typename... TArgs>
-                    explicit PurchasePoint(TArgs... args): PurchasePoint__(std::forward<TArgs>(args)...) {}
+                    explicit PurchasePoint(TArgs... args): PurchasePoint__(std::forward<TArgs>(args)...)/*, good_num(0), total_price(0)*/ {
+                              good_in_range.resize(PurchasePoint__::size(), {0, 0});
+                    }
                     
                     // make instance in purchase/ robot or boat
                     bool purchase(int purchase_id) noexcept {
@@ -370,6 +321,40 @@ namespace BaseElem {
                                         printf("lboat %d %d\n", (*this)[purchase_id].first, (*this)[purchase_id].second); 
                               }
                               return true;
+                    }
+
+                    struct Record { int num, price; };
+                    std::vector<Record> good_in_range;
+                    // int good_num, total_price;
+
+                    template <typename... TArgs>
+                    inline std::pair<int, int> emplace_back(TArgs&... __args) noexcept {
+                              auto ret = PurchasePoint__::emplace_back(std::forward<TArgs>(__args)...);
+                              good_in_range.resize(PurchasePoint__::size());
+                              return ret;
+                    }
+
+                    inline void append_good(const int id, const Good &good) noexcept {
+                              display(Purchase %d append good[%d %d %d %d %d]\n, id, good.x, good.y, good.price, good.purchase_rank, good.live);
+
+                              good_in_range[id].num ++;
+                              good_in_range[id].price += good.price;
+
+                              display(Out append_good(const int, const Good &)\n);
+                    }
+
+                    inline void remove_good(const int id, const Good &good) noexcept {
+                              good_in_range[id].num --;
+                              good_in_range[id].price -= good.price;
+
+                              // 正确性检查
+                              record_check__();
+                    }
+
+          private:
+                    inline void record_check__() const noexcept {
+                              for (auto &rec : good_in_range) 
+                              assert(rec.num >= 0 && rec.price >= 0);
                     }
           };
 
@@ -411,6 +396,97 @@ namespace BaseElem {
           PurchasePoint<Robot> Base::robot_purchase_point = PurchasePoint<Robot>();
           PurchasePoint<Boat> Base::boat_purchase_point = PurchasePoint<Boat>();
           std::vector<std::pair<int, int>> Base::delivery_point = std::vector<std::pair<int, int>>();
+
+          /**
+           * Frame部分
+          */
+
+          int Frame::id = 0;
+          int Frame::gap_id = 0;
+          int Frame::money = 0;
+          GoodStor Frame::goods = GoodStor();
+          std::vector<Robot> Frame::robots = std::vector<Robot>();
+          std::vector<Boat> Frame::boats = std::vector<Boat>();
+
+          std::vector<int> buffer;
+          int Frame::update() noexcept {
+                    display(Frame update......\n);
+
+                    int crt_id, good_num;
+                    if (scanf("%d%d", &crt_id, &money) == EOF) return -1;
+                    gap_id = crt_id - id;
+
+                    display(::: Processing new goods......\n);
+
+                    scanf("%d", &good_num);
+                    buffer.clear();
+                    for (auto &&[k, v] : goods) {
+                              v.live -= gap_id;
+                              if (v.live <= 0) {
+                                        buffer.push_back(k);
+                                        Base::robot_purchase_point.remove_good(v.purchase_rank, v);
+                              }
+                    }
+                    for (auto &x : buffer) goods.erase(x);
+                    id = crt_id;
+
+                    display(::: Outdate goods removed......\n);
+
+                    for (int i = 0; i < good_num; ++i) {
+                              int x, y, price;
+                              scanf("%d%d%d", &x, &y, &price);
+
+                              // record good when price bigger than 0
+                              if (price != 0) goods[as_key(x, y)] = ({
+                                        int distance_ = INT_MAX, pur_id = -1;
+                                        for (int i = 0; i < Base::robot_purchase_point.size(); ++i) {
+                                                  auto &pur = Base::robot_purchase_point[i];
+                                                  int dis_ = std::abs(pur.first - x) + std::abs(pur.second - y);
+                                                  if (dis_ < distance_) {
+                                                            distance_ = dis_;
+                                                            pur_id = i;
+                                                  }
+                                        }
+                                        assert(pur_id != -1);         // 检查一定是找到了一个位置
+                                        display(CHECK POS1\n);
+
+                                        // good属于离他最近的purchase
+                                        auto ret = Good(x, y, price, pur_id, 1000);
+                                        display(CHECK POS1.5\n);
+                                        Base::robot_purchase_point.append_good(pur_id, ret);
+
+                                        display(CHECK POS2\n);
+                                        
+                                        // 返回good
+                                        std::move(ret);
+                              });
+                    }
+
+                    display(::: Process new goods over......\n);
+
+                    int robot_num;
+                    scanf("%d", &robot_num);
+                    // check the number of robot is right
+                    display(RobotNum: %d and BaseRobotNum: %d\n, robot_num, Base::robot_num);
+                    assert(robot_num == Base::robot_num);
+                    robots.resize(robot_num);     // 确保有足够的位置
+                    for (int i = 0; i < Base::robot_num; ++i) {
+                              scanf("%d%d%d%d", &robots[i].id, &robots[i].goods_num, &robots[i].x, &robots[i].y);
+                    }
+
+                    int boat_num;
+                    scanf("%d", &boat_num);
+                    // check......
+                    assert(boat_num == Base::boat_num);
+                    boats.resize(boat_num);       // 确保有足够的位置
+                    for (int i = 0; i < Base::boat_num; ++i) {
+                              scanf("%d%d%d%d%d%d", &boats[i].id, &boats[i].goods_num, &boats[i].x, &boats[i].y, &boats[i].dir, &boats[i].status);
+                    }
+
+                    // char okk[100];
+                    // scanf("%s", okk);
+                    return id;
+          }
 }
 
 /**
@@ -425,7 +501,9 @@ struct MyBase: public BaseElem::Base {
           static inline void init() noexcept {
                     Base::init();
                     // int [N][N][ROBOT_NUM]
-                    locks_.resize(N, std::vector< std::vector<int> >(N, std::vector<int>(20, 0)));  // 一次开大点20个机器人的锁
+                    locks_.resize(N, std::vector< std::vector<int> >(N, std::vector<int>(ROBOT_LIMIT, 0)));
+
+                    // 关于不同purchase位周围的
           }
 };
 // int ***MyBase::locks_ = NULL;
