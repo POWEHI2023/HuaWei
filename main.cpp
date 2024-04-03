@@ -900,6 +900,7 @@ void robot_action() noexcept {
                               auto router = router_dij(robot);
                               MyFrame::router_times++;      // 找路次数加一
                               if (router.empty()) {
+                                        // 冗余 拿/放 操作
                                         if (robot.goods_num == 0) {
                                                   MyFrame::goods.erase(as_key(robot.x, robot.y));
                                                   return robot.get();
