@@ -134,7 +134,7 @@ class Path;
 enum TraceType { GOOD, BERTH, None };
 
 // 用来构造路径
-Path __trace_back(int const map[N][N], int x, int y, int & distance) noexcept;
+Path __trace_back(int const map[N][N], int x, int y) noexcept;
 
 /**
  * 路径指针，用来移动
@@ -145,16 +145,18 @@ Path __trace_back(int const map[N][N], int x, int y, int & distance) noexcept;
 class Path: public Path__ {
 public:
           template <typename... TArgs>
-          Path(TArgs... args): Path__(std::forward<TArgs>(args)...), distance(0), cursor(-1), tar_x(0), tar_y(0), type_(None) {}
+          Path(TArgs... args): Path__(std::forward<TArgs>(args)...), /*distance(0),*/ cursor(-1), tar_x(0), tar_y(0), type_(None) {}
           // Path(int cap = 0): Path__(cap), distance(0) {}
-          int inline get_distance() const noexcept { return distance - Path__::size() + cursor + 1; }
+          inline int get_distance() const noexcept { return cursor + 1; }
+          bool inline done() const noexcept { return cursor < 0; }
+          inline int get_direction() noexcept { return done() ? POINT : (*this)[cursor--]; }
 
-          int cursor;      // 指针从后往前
           int tar_x, tar_y;
           TraceType type_;
 private:
-          int distance;
-          friend Path __trace_back(int const [N][N], int, int, int &) noexcept;
+          // int distance;
+          int cursor;      // 指针从后往前
+          friend Path __trace_back(int const [N][N], int, int) noexcept;
 };
 
 void perfix_action() noexcept;          // 预备动作
@@ -725,7 +727,7 @@ void MyFrame::purchase_action() noexcept {
 */
 
 // 上是x-1，下是x+1，右是y+1，左是y-1
-Path __trace_back(int const map[N][N], int x, int y, int &distance) noexcept {
+Path __trace_back(int const map[N][N], int x, int y) noexcept {
           Path ret;
           while (map[x][y] != POINT) {
                     ret.emplace_back(map[x][y]);
@@ -740,7 +742,7 @@ Path __trace_back(int const map[N][N], int x, int y, int &distance) noexcept {
                               }
                     }
           }
-          ret.distance = distance;
+          // ret.distance = distance;
           ret.cursor = ret.size() - 1;
           ret.tar_x = x; ret.tar_y = y;
           return ret;
@@ -825,7 +827,7 @@ const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noex
 
                                         if (tolance_ == -1 || distance_[x][y] <= tolance_) {
                                                   // display(Find target_......\n);
-                                                  auto path = __trace_back(trace_ , x, y, distance_[x][y]);
+                                                  auto path = __trace_back(trace_ , x, y);
                                                   path.type_ = robot.goods_num ? BERTH : GOOD;
 
                                                   ret.emplace_back(path);
@@ -889,7 +891,7 @@ void perfix_action() noexcept {
                     }
           }
 }
-// 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作]
+// 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作 X]
 void robot_action() noexcept {
           // display(Robot action......\n);
 
@@ -927,11 +929,11 @@ void robot_action() noexcept {
                               robot.move(dir_);
                     } else {  
                               // if (path.cursor >= 0) { // DEBUG时候必须有if，因为不会在没路以后再找路
-                              robot.move(path[path.cursor--]);
+                              robot.move(path.get_direction());
                               /*} else*/ 
                     }
                     
-                    if (path.cursor < 0 && robot.stack_.empty()) { //路径走完了
+                    if (path.done() && robot.stack_.empty()) { //路径走完了
                               display(::: Robot goods_num: %d\n, robot.goods_num);
                               
                               if (robot.goods_num) robot.pull();
@@ -1003,7 +1005,10 @@ inline void __force_unlock(int x, int y) noexcept { MyBase::zlocks_[x][y] = 0; }
 // 用于选择优先避让方向
 std::vector<int> direction_list {LEFT, RIGHT, UP, DOWN};
 void Robot::move(int dir) noexcept {
-          int otrace_x = trace_x, otrace_y = trace_y;
+          if (dir == POINT) {
+                    display(POINT direction );
+          }
+          // int otrace_x = trace_x, otrace_y = trace_y;
           auto &zlocks_ = MyBase::zlocks_;
 
           switch (dir) {
@@ -1024,7 +1029,7 @@ void Robot::move(int dir) noexcept {
                     // 前方有机器人挡路
                     trace_x = x, trace_y = y;
 
-                    int priority_ = (dir == UP || dir == DOWN) ? 0 : 2;
+                    int priority_ = (dir == UP || dir == DOWN) ? 0 : 2;                   // 首先垂直避让
                     for (int i = 0; i < 4; ++i, priority_ = (priority_ + 1) % 4) {
                               int ctrace_x = x, ctrace_y = y;                                       // 从当前方向开始
                               switch (direction_list[priority_]) {
