@@ -234,7 +234,7 @@ struct Boat: public BaseElem::Boat__ {
           bool can_leave = false;
           Berth *aim = nullptr;
 
-          inline void ship() noexcept;
+          inline void move() noexcept;
 };
 
 /**
@@ -1059,7 +1059,7 @@ void Robot::move(int dir) noexcept {
 }
 
 // TODO: 船有体积，所以移动还是寻路都有限制
-void Boat::ship() noexcept {
+void Boat::move() noexcept {
           Boat__::ship();
 
 }
