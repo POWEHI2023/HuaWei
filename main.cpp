@@ -44,6 +44,7 @@
 #include <numeric>
 #include <set>
 #include <cassert>
+#include <functional>
 
 
 /**
@@ -741,6 +742,7 @@ void MyFrame::purchase_action() noexcept {
 // 上是x-1，下是x+1，右是y+1，左是y-1
 Path __trace_back(int const map[N][N], int x, int y) noexcept {
           Path ret;
+          ret.tar_x = x; ret.tar_y = y;
           while (map[x][y] != POINT) {
                     ret.emplace_back(map[x][y]);
                     int dir = map[x][y];
@@ -756,7 +758,6 @@ Path __trace_back(int const map[N][N], int x, int y) noexcept {
           }
           // ret.distance = distance;
           ret.cursor = ret.size() - 1;
-          ret.tar_x = x; ret.tar_y = y;
           return ret;
 }
 
@@ -1019,9 +1020,13 @@ void Robot::pull() const noexcept {
           else tar_x = x, tar_y = y;
 
           auto ret = MyBase::berths.iter_find(tar_x, tar_y, [](int x, int y, Berth &berth) {
-                    return std::abs(x - berth.x) < 3 && std::abs(y = berth.y) < 3;
+                    display(DETAIL ::: MAP_CHAR:: %c CMP_FUNC(%d %d Berth[%d %d])\n, MyBase::grid[x][y], x, y, berth.x, berth.y);
+                    return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
           });
-          if (ret != MyBase::berths.end()) (*ret).crt_num += 1;
+          if (ret != MyBase::berths.end()) {
+                    (*ret).crt_num += 1;
+                    display(INFO ::: Berth %d current_number is %d.\n, (*ret).id, (*ret).crt_num);
+          }
           else {
                     display(ERROR ::: Can not find a berth to pull good......\n);
           }
