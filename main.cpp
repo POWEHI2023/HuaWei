@@ -222,6 +222,8 @@ struct Robot: public BaseElem::Robot__ {
           Path current_path;
           int current_price = 0;
 
+          std::vector<int> stack_; // 用于移动过程中动态添加的路径
+
           inline void pull() const noexcept;
           inline void move(int) noexcept;
           inline void get() noexcept;
@@ -619,15 +621,18 @@ namespace BaseElem {
 struct MyBase: public BaseElem::Base {
           // static int ***locks_;
           static std::vector< std::vector< std::vector<int> > > locks_;
+          static std::vector< std::vector<int> > zlocks_;
 
           static inline void init() noexcept {
                     Base::init();
                     // int [N][N][ROBOT_NUM]
                     locks_.resize(N, std::vector< std::vector<int> >(N, std::vector<int>(ROBOT_LIMIT, 0)));
+                    zlocks_.resize(N,std::vector<int>(N, 0));
           }
 };
 // int ***MyBase::locks_ = NULL;
 std::vector< std::vector< std::vector<int> > > MyBase::locks_ = std::vector< std::vector< std::vector<int> > >();
+std::vector< std::vector<int> > MyBase::zlocks_ = std::vector< std::vector<int> >();
 
 struct MyFrame: public BaseElem::Frame {
           static int clock_for_margin_func;
@@ -758,16 +763,19 @@ inline bool __check_kberth(int x,int y) noexcept { return (MyBase::grid[x][y] ==
 
 typedef bool (*check_can_move) (char &);
 inline bool __both_robot_boat_move(char &c) noexcept { return c == 'C' || c == 'c'; }
-inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
+inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || /*c == 'R' ||*/ c == 'B' || __both_robot_boat_move(c); }
+
 // TODO: 船有体积，所以船的移动条件更苛刻
-inline bool __boat_can_move(char &c) noexcept { return c == '*' || c == '~' || c == 'S' || c == 'K' || c == 'T' || __both_robot_boat_move(c); }
+inline bool __boat_can_move(char &c) noexcept { return c == '*' || c == '~' || /*c == 'S' ||*/ c == 'K' || c == 'T' || __both_robot_boat_move(c); }
 
 std::set<int> seen;
 // 寻找路径，默认只找最近的
 template <typename T>         // 只能是机器人或者船
 const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noexcept {
           auto &map_ = MyBase::grid;
-          auto &locks_ = MyBase::locks_;
+          // 加锁的操作转移到__sift_and_lock()中，所以这里设置不可修改locks_
+          const auto &locks_ = MyBase::locks_;
+
           check_position __check = NULL;
           check_can_move __can_move = NULL;      // 目前只能用于机器人
 
@@ -891,7 +899,12 @@ void robot_action() noexcept {
                     if (robot.current_path.empty() && MyFrame::router_times < ROUTER_LIMIT_PER_FRAME) {
                               auto router = router_dij(robot);
                               MyFrame::router_times++;      // 找路次数加一
-                              if (router.empty()) continue;
+                              if (router.empty()) {
+                                        if (robot.goods_num == 0) {
+                                                  MyFrame::goods.erase(as_key(robot.x, robot.y));
+                                                  return robot.get();
+                                        } else return robot.pull();
+                              }
 
                               // 目前就一条路径
                               robot.current_path = std::move(router);
@@ -905,11 +918,19 @@ void robot_action() noexcept {
                     // 机器人移动
                     
                     auto &path = robot.current_path;
+
+                    // 当存在临时路径，先走临时路径
+                    if (robot.stack_.size()) {
+                              auto dir_ = robot.stack_.back();
+                              robot.stack_.pop_back();
+                              robot.move(dir_);
+                    } else {  
+                              // if (path.cursor >= 0) { // DEBUG时候必须有if，因为不会在没路以后再找路
+                              robot.move(path[path.cursor--]);
+                              /*} else*/ 
+                    }
                     
-                    // if (path.cursor >= 0) { // DEBUG时候必须有if，因为不会在没路以后再找路
-                    robot.move(path[path.cursor--]);
-                    /*} else*/ 
-                    if (path.cursor < 0) { //路径走完了
+                    if (path.cursor < 0 && robot.stack_.empty()) { //路径走完了
                               display(::: Robot goods_num: %d\n, robot.goods_num);
                               
                               if (robot.goods_num) robot.pull();
@@ -967,8 +988,23 @@ void Robot::pull() const noexcept {
           }
 }
 
+inline void __force_lock(int x, int y) noexcept {
+          if (MyBase::grid[x][y] == 'c') {} 
+          else if (MyBase::grid[x][y] == '>' || MyBase::grid[x][y] == 'R')  {} 
+          else if (MyBase::grid[x][y] == '~' || MyBase::grid[x][y] == 'S') {} 
+          else {    // 会发生碰撞的地界
+                    MyBase::zlocks_[x][y] = 1;
+          }
+          // return true;
+}
+inline void __force_unlock(int x, int y) noexcept { MyBase::zlocks_[x][y] = 0; }
+
+// 用于选择优先避让方向
+std::vector<int> direction_list {LEFT, RIGHT, UP, DOWN};
 void Robot::move(int dir) noexcept {
-          Robot__::move(dir);
+          int otrace_x = trace_x, otrace_y = trace_y;
+          auto &zlocks_ = MyBase::zlocks_;
+
           switch (dir) {
                     case UP: trace_x--; break;
                     case DOWN: trace_x++; break;
@@ -976,6 +1012,47 @@ void Robot::move(int dir) noexcept {
                     case RIGHT: trace_y++; break;
                     default: {
                               display(::: Unknown direction[%d]......\n, dir);
+                    }
+          }
+
+          if (zlocks_[trace_x][trace_y] == 0) {                                           // 正常完成移动
+                    Robot__::move(dir);
+                    // zlocks_[x][y] = 0, zlocks_[trace_x][trace_y] = 1;                     // 换锁
+                    __force_lock(trace_x, trace_y), __force_unlock(x, y);
+          } else {
+                    // 前方有机器人挡路
+                    trace_x = x, trace_y = y;
+
+                    int priority_ = (dir == UP || dir == DOWN) ? 0 : 2;
+                    for (int i = 0; i < 4; ++i, priority_ = (priority_ + 1) % 4) {
+                              int ctrace_x = x, ctrace_y = y;                                       // 从当前方向开始
+                              switch (direction_list[priority_]) {
+                                        case UP: ctrace_x--; break;
+                                        case DOWN: ctrace_x++; break;
+                                        case LEFT: ctrace_y--; break;
+                                        case RIGHT: ctrace_y++; break;
+                              }
+
+                              if (MyBase::grid[ctrace_x][ctrace_y] == '#' || MyBase::grid[ctrace_x][ctrace_y] == '*' || MyBase::grid[ctrace_x][ctrace_y] == '~' ||
+                                        MyBase::grid[ctrace_x][ctrace_y] == 'S' || MyBase::grid[ctrace_x][ctrace_y] == 'K' || MyBase::grid[ctrace_x][ctrace_y] == 'T') 
+                              continue; // 机器人无法走海上和障碍物
+
+
+                              // 发现周围的陆地并且没有机器人占用
+                              if (zlocks_[ctrace_x][ctrace_y] == 0) {
+                                        __force_lock(ctrace_x, ctrace_y), __force_unlock(x, y);
+                                        trace_x = ctrace_x, trace_y = ctrace_y;                     // 更新trace
+                                        Robot__::move(direction_list[priority_]);                   // 移动
+                                        
+                                        stack_.emplace_back(dir);                                   // 记录没完成的路径
+                                        switch (direction_list[priority_]) {                        // 记录新增临时路径
+                                                  case UP: stack_.emplace_back(DOWN); break;
+                                                  case DOWN: stack_.emplace_back(UP); break;
+                                                  case LEFT: stack_.emplace_back(RIGHT); break;
+                                                  case RIGHT: stack_.emplace_back(LEFT); break;
+                                        }
+                                        break;                                                      // 完成
+                              }
                     }
           }
 }
