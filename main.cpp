@@ -108,8 +108,8 @@ private:
 #define BOAT_PRICE 8000
 #define ROBOT_PRICE 2000
 
-#define ROBOT_LIMIT 20        // 设置一个最大量
-#define BOAT_LIMIT 10         // 设置一个最大量
+#define ROBOT_LIMIT 10        // 设置一个最大量
+#define BOAT_LIMIT 5         // 设置一个最大量
 
 #define ROUTER_LIMIT_PER_FRAME 5        // 每帧最多找几次路
 
@@ -148,7 +148,7 @@ public:
           Path(TArgs... args): Path__(std::forward<TArgs>(args)...), /*distance(0),*/ cursor(-1), tar_x(0), tar_y(0), type_(None) {}
           // Path(int cap = 0): Path__(cap), distance(0) {}
           inline int get_distance() const noexcept { return cursor + 1; }
-          bool inline done() const noexcept { return cursor < 0; }
+          inline bool done() const noexcept { return cursor < 0; }
           inline int get_direction() noexcept { return done() ? POINT : (*this)[cursor--]; }
 
           int tar_x, tar_y;
@@ -270,7 +270,7 @@ namespace BaseElem {
                      * }); (例子)
                     */
                     template <typename... Args, typename T>
-                    inline decltype(auto) iter_find(Args... args, const T &cmp) {
+                    inline decltype(auto) iter_find(Args... args, const T &cmp) noexcept {
                               for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
                               if (cmp(std::forward(args)..., *iter)) return iter;
                               return BerthStor__::end();
@@ -281,7 +281,8 @@ namespace BaseElem {
                      * 当匹配到x、y与某个泊点重合，通过(*iter)得到泊点的引用
                      * 当没有匹配到是，iter == 实例.end();
                     */
-                    inline decltype(auto) iter_find(int x, int y) {
+                    template <int, int>
+                    inline decltype(auto) iter_find(int x, int y) noexcept {
                               for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
                               if ((*iter).x == x && (*iter).y == y) return iter;
                               return BerthStor__::end();
@@ -433,6 +434,7 @@ namespace BaseElem {
                                                   pur_x, pur_y                                      // trace_x/ trace_y
                                         });
                               } else {
+                                        display(PURCHASE BOAT......\n);
                                         if (Frame::money < BOAT_PRICE) return false;
                                         Base::boat_num++; Frame::money -= BOAT_PRICE;
                                         printf("lboat %d %d\n", (*this)[purchase_id].first, (*this)[purchase_id].second); 
@@ -582,7 +584,10 @@ namespace BaseElem {
                                         
                                         // 返回good
                                         std::move(ret);
-                              });
+                              }); 
+                              else {
+                                        if (goods.find_(x, y)) goods.erase(as_key(x, y));
+                              }
                     }
 
                     int robot_num;
@@ -810,6 +815,8 @@ const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noex
           auto __traverse = [&]() -> int {
                     auto buff_wait = std::set<Position>();
                     CYCLE__: for (auto &pos : wait_) {
+                              // buff_wait = std::set<Position>();
+
                               auto [x, y] = pos;
                               if (__check(x, y) && seen.find(as_key(x, y)) == seen.end()) {
                                         display(Find target ? %d\n, MyFrame::goods.find_(as_key(x, y)));
@@ -832,8 +839,8 @@ const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noex
 
                                                   ret.emplace_back(path);
                                                   seen.emplace(as_key(x, y));
-                                                  if (ret.size() < cap) return 0;
-                                                  else return -1;
+                                                  if (ret.size() >= cap) return 0;
+                                                  // else return -1;
                                         } else {
                                                   display(Beyond the distance can be tolerated! No path is detected.\n);
                                                   return -1;
@@ -891,9 +898,11 @@ void perfix_action() noexcept {
                     }
           }
 }
+// std::vector<Robot *> after_move;
 // 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作 X]
 void robot_action() noexcept {
           // display(Robot action......\n);
+          // after_move.clear();
 
           for (auto &robot : MyFrame::robots) {
                     if (robot.collision) robot.current_path.clear(), robot.collision = false;  // 碰撞之后重新寻路
@@ -905,8 +914,9 @@ void robot_action() noexcept {
                                         // 冗余 拿/放 操作
                                         if (robot.goods_num == 0) {
                                                   MyFrame::goods.erase(as_key(robot.x, robot.y));
-                                                  return robot.get();
-                                        } else return robot.pull();
+                                                  robot.get();
+                                        } else robot.pull();
+                                        continue;
                               }
 
                               // 目前就一条路径
@@ -926,6 +936,7 @@ void robot_action() noexcept {
                     if (robot.stack_.size()) {
                               auto dir_ = robot.stack_.back();
                               robot.stack_.pop_back();
+                              
                               robot.move(dir_);
                     } else {  
                               // if (path.cursor >= 0) { // DEBUG时候必须有if，因为不会在没路以后再找路
@@ -939,9 +950,14 @@ void robot_action() noexcept {
                               if (robot.goods_num) robot.pull();
                               else robot.get();
                               robot.current_path.clear();   // 走完整条路径，忘掉之前的路径
+                              // after_move.emplace_back(&robot);
                     }
           }
 
+          /*for (auto &robot : after_move) {
+                    if (robot->goods_num) robot->pull();
+                    else robot->get();
+          }*/
 }
 // 船的操作/ 分配泊点/ 装卸货物
 void boat_action() noexcept {
@@ -989,6 +1005,8 @@ void Robot::pull() const noexcept {
                     MyFrame::clock_id = MyFrame::id;
                     MyFrame::price_count = 0;
           }
+
+          // 记录放货
 }
 
 inline void __force_lock(int x, int y) noexcept {
