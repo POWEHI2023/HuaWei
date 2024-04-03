@@ -269,10 +269,17 @@ namespace BaseElem {
                      *        return (berth.x <= x && berth.x + 3 > x && berth.y >= y && berth.y + 3 < y);
                      * }); (例子)
                     */
-                    template <typename... Args, typename T>
-                    inline decltype(auto) iter_find(Args... args, const T &cmp) noexcept {
+                    /*template <typename... Args, typename T>
+                    inline decltype(auto) iter_find(Args&... args, const T &cmp) noexcept {
                               for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
                               if (cmp(std::forward(args)..., *iter)) return iter;
+                              return BerthStor__::end();
+                    }*/
+                    inline decltype(auto) iter_find(int x, int y, const std::function<bool(int,int,Berth &)> &cmp = [](int x,int y, Berth &berth) {
+                              return x == berth.x && y == berth.y;
+                    }) {
+                              for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
+                              if (cmp(x, y, *iter)) return iter;
                               return BerthStor__::end();
                     }
                     /** 
@@ -281,7 +288,7 @@ namespace BaseElem {
                      * 当匹配到x、y与某个泊点重合，通过(*iter)得到泊点的引用
                      * 当没有匹配到是，iter == 实例.end();
                     */
-                    template <int, int>
+                    // template <int, int>
                     inline decltype(auto) iter_find(int x, int y) noexcept {
                               for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
                               if ((*iter).x == x && (*iter).y == y) return iter;
@@ -1007,6 +1014,17 @@ void Robot::pull() const noexcept {
           }
 
           // 记录放货
+          int tar_x, tar_y;
+          if (current_path.size()) tar_x = current_path.tar_x, tar_y = current_path.tar_y;
+          else tar_x = x, tar_y = y;
+
+          auto ret = MyBase::berths.iter_find(tar_x, tar_y, [](int x, int y, Berth &berth) {
+                    return std::abs(x - berth.x) < 3 && std::abs(y = berth.y) < 3;
+          });
+          if (ret != MyBase::berths.end()) (*ret).crt_num += 1;
+          else {
+                    display(ERROR ::: Can not find a berth to pull good......\n);
+          }
 }
 
 inline void __force_lock(int x, int y) noexcept {
