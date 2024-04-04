@@ -973,10 +973,10 @@ router_boat(
                               }
 
                               // 再对这个位置的下一层做遍历
-                              auto &to_next_ = dir == RIGHT ? to_right_ : (
-                                        dir == LEFT ? to_left_ : (
-                                                  dir == UP ? to_up_ : (
-                                                            to_down_ // dir == DOWN
+                              auto &to_next_ =    dir == RIGHT        ? to_right_ : (
+                                                  dir == LEFT         ? to_left_ : (
+                                                  dir == UP           ? to_up_ : (
+                                                                        to_down_ // dir == DOWN
                                                   )
                                         )
                               );
