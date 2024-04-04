@@ -112,6 +112,9 @@ private:
 #define ROBOT_LIMIT 10        // 设置一个最大量
 #define BOAT_LIMIT 5         // 设置一个最大量
 
+#define INIT_ROBOT_NUM 8      // 初始买几个机器人
+#define INIT_BOAT_NUM 1       // 初始买几个船
+
 #define ROUTER_LIMIT_PER_FRAME 5        // 每帧最多找几次路
 
 #define display(msg, ...) ({ fprintf(stderr, #msg, ##__VA_ARGS__); })
@@ -261,21 +264,6 @@ namespace BaseElem {
                     template <typename... TArgs>
                     explicit BerthStor(TArgs... args): BerthStor__(std::forward<TArgs>(args)...) {}
 
-                    /** 
-                     * 寻找一个符合条件的值，是否符合条件由参数cmp判断
-                     *        自定义函数: cmp传入的参数最后一个需要为Berth &
-                     * 泊点是一整片B，所以可能要判断是否在范围内
-                     * 
-                     * find(x, y, [](int x, int y, Berth &berth) {
-                     *        return (berth.x <= x && berth.x + 3 > x && berth.y >= y && berth.y + 3 < y);
-                     * }); (例子)
-                    */
-                    /*template <typename... Args, typename T>
-                    inline decltype(auto) iter_find(Args&... args, const T &cmp) noexcept {
-                              for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
-                              if (cmp(std::forward(args)..., *iter)) return iter;
-                              return BerthStor__::end();
-                    }*/
                     inline decltype(auto) iter_find(int x, int y, const std::function<bool(int,int,Berth &)> &cmp = [](int x,int y, Berth &berth) {
                               return x == berth.x && y == berth.y;
                     }) {
@@ -283,13 +271,7 @@ namespace BaseElem {
                               if (cmp(x, y, *iter)) return iter;
                               return BerthStor__::end();
                     }
-                    /** 
-                     * 特化的find方法
-                     * BerthStor::iterator iter = 实例.find(x, y);
-                     * 当匹配到x、y与某个泊点重合，通过(*iter)得到泊点的引用
-                     * 当没有匹配到是，iter == 实例.end();
-                    */
-                    // template <int, int>
+
                     inline decltype(auto) iter_find(int x, int y) noexcept {
                               for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
                               if ((*iter).x == x && (*iter).y == y) return iter;
@@ -669,8 +651,8 @@ struct MyFrame: public BaseElem::Frame {
 int MyFrame::clock_for_margin_func { 1 };
 int MyFrame::clock_id { 0 };
 int MyFrame::price_count { 0 };
-int MyFrame::need_robot { 1 };
-int MyFrame::need_boat { 1 };
+int MyFrame::need_robot { INIT_ROBOT_NUM };
+int MyFrame::need_boat { INIT_BOAT_NUM };
 int MyFrame::router_times { 0 };
 
 double MyFrame::margin_growth { 0 };
@@ -721,15 +703,16 @@ int MyFrame::update() noexcept {
 */
 void MyFrame::purchase_action() noexcept {
           // display(Purchase action......\n);
+          if (need_boat > 0 && MyBase::boat_num < BOAT_LIMIT) {
+                    int id = std::rand() % MyBase::boat_purchase_point.size();
+                    display(Buy a boat purchase id %d......\n, id);
+                    if (MyBase::boat_purchase_point.purchase(id)) need_boat--;
+          }
+
           if (need_robot > 0 && MyBase::robot_num < ROBOT_LIMIT) {
                     int id = MyBase::robot_purchase_point.find_purchase();
                     display(Buy a robot purchase id %d......\n, id);
                     if (MyBase::robot_purchase_point.purchase(id)) need_robot--;
-          }
-
-          if (need_boat > 0 && MyBase::boat_num < BOAT_LIMIT) {
-                    int id = std::rand() % MyBase::boat_purchase_point.size();
-                    if (MyBase::boat_purchase_point.purchase(id)) need_boat--;
           }
 }
 
@@ -785,7 +768,7 @@ inline bool __boat_can_move(char &c) noexcept { return c == '*' || c == '~' || /
 
 std::set<int> seen;
 // 寻找路径，默认只找最近的
-template <typename T>         // 只能是机器人或者船
+template <typename T>         // 只能是机器人或者船 (X)
 const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noexcept {
           auto &map_ = MyBase::grid;
           // 加锁的操作转移到__sift_and_lock()中，所以这里设置不可修改locks_
@@ -821,9 +804,9 @@ const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noex
           auto ret = std::vector<Path>();
           auto wait_ = std::set<Position>(); wait_.emplace(robot.x, robot.y);
           auto __traverse = [&]() -> int {
-                    auto buff_wait = std::set<Position>();
+                    std::set<Position> buff_wait;
                     CYCLE__: for (auto &pos : wait_) {
-                              // buff_wait = std::set<Position>();
+                              buff_wait = std::set<Position>();
 
                               auto [x, y] = pos;
                               if (__check(x, y) && seen.find(as_key(x, y)) == seen.end()) {
@@ -887,6 +870,135 @@ const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noex
           return __sift_and_lock(ret);
 }
 
+
+
+// 船的trace_back/ TODO: 
+Path __trace_back_boat(int direction_[N][N][4], int x, int y, int dir) {
+
+          return Path();
+}
+
+// args 可以为任何类型参数/ 自定义函数可能需要不同类型的参数
+typedef bool (*check_position_boat) (int x, int y, int dir, void *);
+// 默认方法/ TODO: 
+inline bool __check_position_boat_default(int x, int y, int dir, void *args) {
+          // 最简单的就是判断 核心点 到达K点
+          return MyBase::grid[x][y] == 'K';
+}
+inline bool __check_position_boat_1 (int x, int y, int dir, void *args) {
+          return false;
+}
+
+/**
+ * 船在一个状态转换的其他状态
+*/
+const std::vector<std::tuple<int, int, int>> to_right_ { {0, 2, DOWN}, {0, 1, RIGHT}, {1, 1, UP} };
+const std::vector<std::tuple<int, int, int>> to_left_ { {0, -1, LEFT}, {0, -2, UP}, {-1, -1, DOWN} };
+const std::vector<std::tuple<int, int, int>> to_up_ { {-1, 0, UP}, {-1, 1, LEFT}, {-2, 0, RIGHT} };
+const std::vector<std::tuple<int, int, int>> to_down_ { {1, 0, DOWN}, {2, 0, LEFT}, {1, -1, RIGHT} };
+// 船寻路
+const Path 
+router_boat(
+          Boat &boat, 
+          const check_position_boat __check_position = __check_position_boat_default, 
+          void *args = NULL   // 比如传入一个Berth，判断是否到达这个berth
+                              // 或者传入一个id，判断是否到达指定id的berth
+) noexcept {
+
+          auto &map_ = MyBase::grid;
+          // 引入锁/ ! zlocks_是单层的
+          auto &locks_ = MyBase::zlocks_;
+          
+          /**
+           * 初始化
+          */
+
+          int direction_ [N][N][4];
+          int distance_[N][N][4];
+          for (int i = 0; i < N; ++i) {
+                    for (int j = 0; j < N; ++j) {
+                              for (int k = 0; k < 4; ++k) {
+                                        distance_[i][j][k] = INT_MAX;
+                                        direction_[i][j][k] = -1;
+                              }
+                    }
+          }
+          direction_[boat.x][boat.y][boat.dir] = POINT;
+          distance_[boat.x][boat.y][boat.dir] = 0;
+
+          // 检查船在 x y 处方向 dir 能否存在/ 判读锁
+          auto __check_can_move = [&](int x, int y, int dir) {
+                    auto __pos_valid = [&](int x, int y) {
+                              return map_[x][y] == '*' || map_[x][y] == '~' || map_[x][y] == 'K' || map_[x][y] == 'C' || map_[x][y] == 'c' || map_[x][y] == 'T';
+                    };
+                    switch (dir) {
+                              case UP: return __pos_valid(x - 2, y) && __pos_valid(x - 2, y + 1);
+                              case DOWN: return __pos_valid(x + 2, y) && __pos_valid(x + 2, y - 1);
+                              case LEFT: return __pos_valid(x, y - 2) && __pos_valid(x - 1, y - 2);
+                              case RIGHT: return __pos_valid(x, y + 2) && __pos_valid(x + 1, y + 2);
+                    }
+                    return false;
+          };
+          // 检查这个位置是否碰到了主航道 主航道 dis 2，普通航道 dis 1
+          auto __check_distance_comsume = [&](int x, int y, int dir) {
+                    int ret = INT_MAX >> 1;
+                    switch (dir) {
+                              case UP: ret = (map_[x - 2][y] == '~' || map_[x - 2][y] == 'c' || map_[x - 2][y + 1] == '~' || map_[x - 2][y + 1] == 'c') ? 2 
+                                        : 1;
+                                        break;
+                              case DOWN: ret = (map_[x + 2][y] == '~' || map_[x + 2][y] == 'c' || map_[x + 2][y - 1] == '~' || map_[x + 2][y - 1] == 'c') ? 2 
+                                        : 1;
+                                        break;
+                              case LEFT: ret = (map_[x][y - 2] == '~' || map_[x][y - 2] == 'c' || map_[x - 1][y  - 2] == '~' || map_[x - 1][y - 2] == 'c') ? 2 
+                                        : 1;
+                                        break;
+                              case RIGHT: ret = (map_[x][y + 2] == '~' || map_[x][y + 2] == 'c' || map_[x + 1][y + 2] == '~' || map_[x + 1][y + 2] == 'c') ? 2 
+                                        : 1;
+                                        break;
+                    }
+                    return ret;
+          };
+
+          Path path;
+          // position, direction
+          std::set<std::tuple<int, int, int>> wait_;
+          wait_.emplace(boat.x, boat.y, boat.dir);
+          while (wait_.size()) {
+                    auto buff_wait = std::set<std::tuple<int, int, int>>();
+                    for (auto &[x, y, dir] : wait_) {
+                              // 首先检查这个位置是不是到了目标
+                              if (__check_position(x, y, dir, args)) {
+                                        // 构造并返回找到的路径
+                                        return __trace_back_boat(direction_, x, y, dir);
+                              }
+
+                              // 再对这个位置的下一层做遍历
+                              auto &to_next_ = dir == RIGHT ? to_right_ : (
+                                        dir == LEFT ? to_left_ : (
+                                                  dir == UP ? to_up_ : (
+                                                            to_down_ // dir == DOWN
+                                                  )
+                                        )
+                              );
+
+                              // 对于三种转换
+                              for (auto &[dx, dy, ddir_] : to_next_) {
+                                        int xx = x + dx, yy = y + dy;
+                                        int dis_ = distance_[x][y][dir] + __check_distance_comsume(xx, yy, ddir_);
+                                        if (__check_can_move(xx, yy, ddir_) && dis_ < distance_[xx][yy][ddir_]) {
+                                                  distance_[xx][yy][ddir_] = dis_;
+                                                  direction_[xx][yy][ddir_] = dir;        // 记录来源状态，可能由三种状态转换而来
+                                                                      // 方便trace出Path
+
+                                                  buff_wait.emplace(xx, yy, ddir_);
+                                        }
+                              }
+                    }
+                    wait_ = std::move(buff_wait);
+          }
+          return Path();      // 空/ 没有找到路径
+}
+
 // 在机器人和船行动前先进行的操作
 void perfix_action() noexcept {
           // display(Perfix action......\n);
@@ -896,7 +1008,9 @@ void perfix_action() noexcept {
           for (auto &robot : MyFrame::robots) {
                     // assert(robot.x == robot.trace_x);
                     // assert(robot.y == robot.trace_y);
-                    display(Robot %d: [x: %d and trace_x: %d] [y: %d and trace_t: %d]\n, robot.id, robot.x, robot.trace_x, robot.y, robot.trace_y);
+
+                    // display(Robot %d: [x: %d and trace_x: %d] [y: %d and trace_t: %d]\n, robot.id, robot.x, robot.trace_x, robot.y, robot.trace_y);
+
                     if (robot.x != robot.trace_x || robot.y != robot.trace_y) {
                               display(::: 机器人 %d 发生了碰撞[frame id %d]\n, robot.id, MyFrame::id);
                               // 归位
@@ -967,10 +1081,13 @@ void robot_action() noexcept {
                     else robot->get();
           }*/
 }
+
 // 船的操作/ 分配泊点/ 装卸货物
 void boat_action() noexcept {
           // display(Boat action......\n);
-
+          for (auto &boat : MyFrame::boats) {
+                    boat.rot(CLOCK);
+          }
 }
 
 void suffix_action() noexcept {
