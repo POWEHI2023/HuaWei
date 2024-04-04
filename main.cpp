@@ -45,7 +45,9 @@
 #include <set>
 #include <cassert>
 #include <functional>
-
+#include <thread>
+#include <exception>
+#include <cstring>
 
 /**
  * 线程池实现
@@ -236,9 +238,10 @@ struct Robot: public BaseElem::Robot__ {
 };
 
 struct Boat: public BaseElem::Boat__ {
-          int crt_num = 0;
-          bool can_leave = false;
-          Berth *aim = nullptr;
+          int crt_num = 0;              // 当前载货
+          bool can_leave = false;       // 是否可以离港
+          Berth *aim = nullptr;         // 目标泊点
+          Path current_path;            // 待走路径
 
           inline void move() noexcept;
 };
@@ -533,7 +536,7 @@ namespace BaseElem {
 
           std::vector<int> buffer;
           int Frame::update() noexcept {
-                    // display(Frame update......\n);
+                    display(Frame update......\n);
 
                     int crt_id, good_num;
                     if (scanf("%d%d", &crt_id, &money) == EOF) return -1;
@@ -602,6 +605,7 @@ namespace BaseElem {
                     boats.resize(boat_num);       // 确保有足够的位置
                     for (int i = 0; i < Base::boat_num; ++i) {
                               scanf("%d%d%d%d%d%d", &boats[i].id, &boats[i].goods_num, &boats[i].x, &boats[i].y, &boats[i].dir, &boats[i].status);
+                              display("get message about boat %d [x %d, y, %d, dir %d, status %d]"\n, boats[i].id, boats[i].x, boats[i].y, boats[i].dir, boats[i].status);
                     }
 
                     // char okk[100];
@@ -687,10 +691,22 @@ int MyFrame::update() noexcept {
           // ...
 
           // 准备动作/ 机器人动作/ 船最后动
-          perfix_action(), robot_action(), boat_action();
-
+          perfix_action();
+          
+          std::vector<std::thread> parallel_tasks(2);
+          display(Create tasks......\n);
+          parallel_tasks[0] = std::thread(robot_action);
+          parallel_tasks[1] = std::thread(boat_action);
+          // robot_action();
+          // boat_action();
+          
+          display(Tasks join......\n);
+          for (int i = 0; i < 2; ++i) parallel_tasks[i].join();
+                    
+          display(Tasks run over......\n);
           // 购买动作
-          purchase_action(), suffix_action();
+          purchase_action();
+          suffix_action();
 
           // 提交这一帧的操作
           CHECK_OK();
@@ -756,38 +772,20 @@ inline Path __sift_and_lock(std::vector<Path> &path) noexcept {
 typedef bool (*check_position) (int, int);
 inline bool __check_berth(int x, int y) noexcept { return (MyBase::grid[x][y] == 'B'); }
 inline bool __check_good(int x, int y) noexcept { return MyFrame::goods.find_(x, y); }
-inline bool __check_transport(int x, int y) noexcept { return (MyBase::grid[x][y] == 'T'); }
-inline bool __check_kberth(int x,int y) noexcept { return (MyBase::grid[x][y] == 'K'); }
 
 typedef bool (*check_can_move) (char &);
 inline bool __both_robot_boat_move(char &c) noexcept { return c == 'C' || c == 'c'; }
 inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || /*c == 'R' ||*/ c == 'B' || __both_robot_boat_move(c); }
 
-// TODO: 船有体积，所以船的移动条件更苛刻
-inline bool __boat_can_move(char &c) noexcept { return c == '*' || c == '~' || /*c == 'S' ||*/ c == 'K' || c == 'T' || __both_robot_boat_move(c); }
-
 std::set<int> seen;
 // 寻找路径，默认只找最近的
-template <typename T>         // 只能是机器人或者船 (X)
-const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noexcept {
+const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexcept {
           auto &map_ = MyBase::grid;
           // 加锁的操作转移到__sift_and_lock()中，所以这里设置不可修改locks_
           const auto &locks_ = MyBase::locks_;
 
-          check_position __check = NULL;
-          check_can_move __can_move = NULL;      // 目前只能用于机器人
-
-          if constexpr (std::is_same_v<T, Robot>) {         // 机器人的指令
-                    __can_move = __robot_can_move;
-                    __check = robot.goods_num ? (__check_berth) : (__check_good);
-          } else if constexpr (std::is_same_v<T, Boat>) {
-                    __can_move = __boat_can_move;      // 意味着这个还不能很好工作/ 未经测试的
-                    __check = robot.can_leave ? (__check_transport) : (__check_kberth);
-          } else {
-                    display(::: [非法的Router类型]只能为Robot或者Boat寻路......\n);
-                    return Path();
-          }
-          
+          check_position __check = robot.goods_num ? (__check_berth) : (__check_good);
+          check_can_move __can_move = __robot_can_move;
           
           int trace_[N][N];             
           int distance_[N][N];          
@@ -806,23 +804,14 @@ const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noex
           auto __traverse = [&]() -> int {
                     std::set<Position> buff_wait;
                     CYCLE__: for (auto &pos : wait_) {
-                              buff_wait = std::set<Position>();
 
                               auto [x, y] = pos;
                               if (__check(x, y) && seen.find(as_key(x, y)) == seen.end()) {
                                         display(Find target ? %d\n, MyFrame::goods.find_(as_key(x, y)));
 
                                         // 可以容忍的距离/ 去泊点无所谓距离/ 去货物只能容忍货物的存在帧
-                                        int tolance_ = ({
-                                                  int ret;
-                                                  if constexpr (std::is_same_v<T, Robot>) 
-                                                            ret = robot.goods_num ? -1 : MyFrame::goods[as_key(x, y)].live;
-                                                  else ret = -1;      // 船去泊点和卸货点，两个点都不会消失，所以可以容忍无限距离
-                                                  ret;
-                                        });
-
+                                        int tolance_ =  robot.goods_num ? -1 : MyFrame::goods[as_key(x, y)].live;
                                         display(tolance_: %d and distance_: %d\n, tolance_, distance_[x][y]);
-
                                         if (tolance_ == -1 || distance_[x][y] <= tolance_) {
                                                   // display(Find target_......\n);
                                                   auto path = __trace_back(trace_ , x, y);
@@ -873,9 +862,11 @@ const /*std::vector<Path>*/ Path router_dij(const T &robot, size_t cap = 1) noex
 
 
 // 船的trace_back/ TODO: 
-Path __trace_back_boat(int direction_[N][N][4], int x, int y, int dir) {
-
-          return Path();
+template <typename T>
+Path __trace_back_boat(T &direction_, int x, int y, int dir) {
+          auto ret = Path();
+          ret.emplace_back(0);
+          return ret;
 }
 
 // args 可以为任何类型参数/ 自定义函数可能需要不同类型的参数
@@ -904,25 +895,18 @@ router_boat(
           void *args = NULL   // 比如传入一个Berth，判断是否到达这个berth
                               // 或者传入一个id，判断是否到达指定id的berth
 ) noexcept {
-
+          display(::: Router boat_ ......\n);
+          
           auto &map_ = MyBase::grid;
           // 引入锁/ ! zlocks_是单层的
           auto &locks_ = MyBase::zlocks_;
-          
+
           /**
            * 初始化
           */
+          std::vector< std::vector< std::vector<int> > > direction_(N, std::vector(N, std::vector(4, -1)));
+          std::vector< std::vector< std::vector<int> > > distance_(N, std::vector(N, std::vector(4, INT_MAX)));
 
-          int direction_ [N][N][4];
-          int distance_[N][N][4];
-          for (int i = 0; i < N; ++i) {
-                    for (int j = 0; j < N; ++j) {
-                              for (int k = 0; k < 4; ++k) {
-                                        distance_[i][j][k] = INT_MAX;
-                                        direction_[i][j][k] = -1;
-                              }
-                    }
-          }
           direction_[boat.x][boat.y][boat.dir] = POINT;
           distance_[boat.x][boat.y][boat.dir] = 0;
 
@@ -963,7 +947,10 @@ router_boat(
           // position, direction
           std::set<std::tuple<int, int, int>> wait_;
           wait_.emplace(boat.x, boat.y, boat.dir);
+
+          int rot_c = 0;
           while (wait_.size()) {
+                    // display(::: BoatRouter::: wait_.size(): %ld and rot_c: %d ......\n, wait_.size(), rot_c++);
                     auto buff_wait = std::set<std::tuple<int, int, int>>();
                     for (auto &[x, y, dir] : wait_) {
                               // 首先检查这个位置是不是到了目标
@@ -994,9 +981,10 @@ router_boat(
                                         }
                               }
                     }
-                    wait_ = std::move(buff_wait);
+                    wait_ = buff_wait;
           }
-          return Path();      // 空/ 没有找到路径
+          // DEBUG
+          return Path(); // __trace_back_boat(direction_, 0, 0, POINT);      // 空/ 没有找到路径
 }
 
 // 在机器人和船行动前先进行的操作
@@ -1024,7 +1012,6 @@ void perfix_action() noexcept {
 // 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作 X]
 void robot_action() noexcept {
           // display(Robot action......\n);
-          // after_move.clear();
 
           for (auto &robot : MyFrame::robots) {
                     if (robot.collision) robot.current_path.clear(), robot.collision = false;  // 碰撞之后重新寻路
@@ -1060,11 +1047,7 @@ void robot_action() noexcept {
                               robot.stack_.pop_back();
                               
                               robot.move(dir_);
-                    } else {  
-                              // if (path.cursor >= 0) { // DEBUG时候必须有if，因为不会在没路以后再找路
-                              robot.move(path.get_direction());
-                              /*} else*/ 
-                    }
+                    } else robot.move(path.get_direction());
                     
                     if (path.done() && robot.stack_.empty()) { //路径走完了
                               display(::: Robot goods_num: %d\n, robot.goods_num);
@@ -1072,21 +1055,21 @@ void robot_action() noexcept {
                               if (robot.goods_num) robot.pull();
                               else robot.get();
                               robot.current_path.clear();   // 走完整条路径，忘掉之前的路径
-                              // after_move.emplace_back(&robot);
                     }
           }
-
-          /*for (auto &robot : after_move) {
-                    if (robot->goods_num) robot->pull();
-                    else robot->get();
-          }*/
 }
 
 // 船的操作/ 分配泊点/ 装卸货物
 void boat_action() noexcept {
-          // display(Boat action......\n);
+          display(Boat action......\n);
+          
+          display(::: Boat number %ld......\n, MyFrame::boats.size());
+
           for (auto &boat : MyFrame::boats) {
-                    boat.rot(CLOCK);
+                    if (boat.status == 0 && boat.current_path.empty()) {
+                              boat.current_path = router_boat(boat);
+                              display(Find a path for boat %d path_size %ld...\n, boat.id, boat.current_path.size());
+                    }
           }
 }
 
