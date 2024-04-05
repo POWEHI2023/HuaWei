@@ -2,16 +2,14 @@
 /**
  * 需要解决的问题
  * 
- * 1. 机器人为什么会一直上下移动
- * 2. 检查泊点计数有没有问题
- * 3. 船避免碰撞
+ * 1. 制定泊点的路径/ 送货点的路径
+ * 2. 并发
+ * 3. 船路径加锁/ 
+ * 4. 控制船和机器人的数量
  * 
  * 正在实现的东西
  * 
- * 1. 船寻路
- * 2. 并发给泊点 拿放 货物，需要对一个泊点加互斥锁
- * 3. 机器人寻路也可以并发，在寻路以后重新遍历所有机器人进行移动/ 船同理
- * 4. 通过线程池减少线程的创建销毁/ 时间足够的话可能不需要
+ * 
 */
 
 #include <iostream>
@@ -32,6 +30,7 @@
 #include <thread>
 #include <exception>
 #include <cstring>
+#include <mutex>
 
 /**
  * 线程池实现
@@ -66,6 +65,7 @@ private:
 #define INIT_BOAT_NUM 1       // 初始买几个船
 
 #define ROUTER_LIMIT_PER_FRAME 5        // 每帧最多找几次路
+#define CMP_TARGET_NUM        10         // 每次比较多少个货物确定要找的货物
 
 #define display(msg, ...) ({ fprintf(stderr, #msg, ##__VA_ARGS__); })
 #define CHECK_OK() ({ char okk[100]; scanf("%s", okk); })
@@ -112,6 +112,7 @@ private:
           // int distance;
           int cursor;      // 指针从后往前
           friend Path __trace_back(int const [N][N], int, int) noexcept;
+          friend Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir) noexcept;
 };
 
 void perfix_action() noexcept;          // 预备动作
@@ -159,9 +160,10 @@ namespace BaseElem {
  * 扩充地图上的基本元素
 */
 
+// TODO: 
 struct Berth: public BaseElem::Berth__ {
           int crt_num = 0;
-
+          std::mutex mtx;
 };
 struct Good: public BaseElem::Good__ {
           int purchase_rank = 0;
@@ -188,7 +190,8 @@ struct Robot: public BaseElem::Robot__ {
 
 struct Boat: public BaseElem::Boat__ {
           int crt_num = 0;              // 当前载货
-          bool can_leave = false;       // 是否可以离港
+          bool can_leave = false;       // 是否载货后离开送货
+                    // 送货路上是true/ 取货路上是false
           Berth *aim = nullptr;         // 目标泊点
           Path current_path;            // 待走路径
 
@@ -722,7 +725,20 @@ Path __trace_back(int const map[N][N], int x, int y) noexcept {
 */
 inline Path __sift_and_lock(std::vector<Path> &path) noexcept {
           if (path.empty()) return Path();        // 没有找到路径
-          return path[0];     // 目前router_dij就找了一条路
+          if (path.size() == 1) return path[0];     // 目前router_dij就找了一条路
+
+          // 比较多条路径
+          double score_ = (double)path[0].tar_price / (double)path[0].get_distance();
+          int ret_ = 0;
+          for (int i = 1; i < path.size(); ++i) {
+                    auto &p = path[i];
+                    double score = (double)p.tar_price / (double)p.get_distance();
+                    if (score > score_) {
+                              ret_ = i;
+                              score_ = score;
+                    }
+          }
+          return path[ret_];
 }
 
 typedef bool (*check_position) (int, int);
@@ -742,8 +758,6 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
 
           check_position __check = robot.goods_num ? (__check_berth) : (__check_good);
           check_can_move __can_move = __robot_can_move;
-          
-          display("::: ::: Mark 1"\n);
 
           int trace_[N][N];             
           int distance_[N][N];          
@@ -756,13 +770,10 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
           trace_[robot.x][robot.y] = POINT;
           distance_[robot.x][robot.y] = 0;
 
-          display("::: ::: Mark 2"\n);
 
           seen.clear();
           auto ret = std::vector<Path>();
           auto wait_ = std::set<Position>(); wait_.emplace(robot.x, robot.y);
-
-          display("::: ::: Mark 3"\n);
 
           CYCLE__: while (wait_.size()) {
                     std::set<Position> buff_wait;
@@ -779,6 +790,7 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
                                                   auto path = __trace_back(trace_ , x, y);
                                                   path.type_ = robot.goods_num ? BERTH : GOOD;
                                                   path.tar_price = MyFrame::goods[as_key(x, y)].price;
+
                                                   ret.emplace_back(path);
                                                   seen.emplace(as_key(x, y));
                                                   if (ret.size() >= cap) goto RET__;
@@ -789,8 +801,6 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
                               }
 
                               int distance = distance_[x][y] + 1;
-
-                              // display("::: ::: Mark Inner distance %d"\n, distance);
 
                               if (x - 1 >= 0 && __can_move(map_[x-1][y]) && distance < distance_[x-1][y]) {
                                         trace_[x-1][y] = UP;
@@ -816,93 +826,71 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
                     wait_ = buff_wait;
           }
 
-          /*
-          auto __traverse = [&]() -> int {
-                    std::set<Position> buff_wait;
-                    CYCLE__: for (auto &pos : wait_) {
-
-                              display("::: ::: Mark 3"\n);
-
-                              auto [x, y] = pos;
-                              if (__check(x, y) && seen.find(as_key(x, y)) == seen.end()) {
-                                        display(Find target ? %d\n, MyFrame::goods.find_(as_key(x, y)));
-
-                                        // 可以容忍的距离/ 去泊点无所谓距离/ 去货物只能容忍货物的存在帧
-                                        int tolance_ =  robot.goods_num ? -1 : MyFrame::goods[as_key(x, y)].live;
-                                        display(tolance_: %d and distance_: %d\n, tolance_, distance_[x][y]);
-                                        if (tolance_ == -1 || distance_[x][y] <= tolance_) {
-                                                  // display(Find target_......\n);
-                                                  auto path = __trace_back(trace_ , x, y);
-                                                  path.type_ = robot.goods_num ? BERTH : GOOD;
-                                                  path.tar_price = MyFrame::goods[as_key(x, y)].price;
-                                                  ret.emplace_back(path);
-                                                  seen.emplace(as_key(x, y));
-                                                  if (ret.size() >= cap) return 0;
-                                                  // else return -1;
-                                        } else {
-                                                  display(Beyond the distance can be tolerated! No path is detected.\n);
-                                                  return -1;
-                                        }
-                              }
-
-                              int distance = distance_[x][y] + 1;
-
-                              if (__can_move(map_[x-1][y]) && distance < distance_[x-1][y]) {
-                                        trace_[x-1][y] = UP;
-                                        distance_[x-1][y] = distance;
-                                        buff_wait.emplace(x-1, y);
-                              }
-                              if (__can_move(map_[x+1][y]) && distance < distance_[x+1][y]) {
-                                        trace_[x+1][y] = DOWN;
-                                        distance_[x+1][y] = distance;
-                                        buff_wait.emplace(x+1, y);
-                              }
-                              if (__can_move(map_[x][y-1]) && distance < distance_[x][y-1]) {
-                                        trace_[x][y-1] = LEFT;
-                                        distance_[x][y-1] = distance;
-                                        buff_wait.emplace(x, y-1);
-                              }
-                              if (__can_move(map_[x][y+1]) && distance < distance_[x][y+1]) {
-                                        trace_[x][y+1] = RIGHT;
-                                        distance_[x][y+1] = distance;
-                                        buff_wait.emplace(x, y+1);
-                              }
-                    }
-                    if (buff_wait.empty()) return 0;
-                    wait_ = std::move(buff_wait);
-                    goto CYCLE__;
-                    
-          } ();*/
-
-          display("::: ::: Mark End"\n);
-
           RET__:
           return __sift_and_lock(ret);
 }
 
 
+/**
+ * 船在一个状态转换的其他状态
+*/
+const std::vector<std::tuple<int, int, int>> to_right_ { {0, 2, DOWN}, {0, 1, RIGHT}, {1, 1, UP} };
+const std::vector<std::tuple<int, int, int>> to_left_ { {0, -1, LEFT}, {0, -2, UP}, {-1, -1, DOWN} };
+const std::vector<std::tuple<int, int, int>> to_up_ { {-1, 0, UP}, {-1, 1, LEFT}, {-2, 0, RIGHT} };
+const std::vector<std::tuple<int, int, int>> to_down_ { {1, 0, DOWN}, {2, 0, LEFT}, {1, -1, RIGHT} };
 
 // 船的trace_back/ TODO: 
-
-template <typename T>
-Path __trace_back_boat(T &direction_, int x, int y, int dir) {
+/**
+ * 当前cdir_和上一个的方向dir_进行比较
+ * 1. 右转 右->下/ 下->左/ 左->上/ 上->右
+ * 2. 直行 相等
+ * 3. 左转 右->上/ 下->右/ 左->下/ 上->左
+*/
+Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir) noexcept {
           auto ret = Path();
-          /*auto confirm_dir_ = [&](int last_dir, int crt_dir) {
+          // 确定船的Path中每一个方向
+          auto confirm_dir_ = [&](int last_dir, int crt_dir) {
                     if (last_dir == crt_dir) return SHIP;
-                    
-                    
-          };
-          while (direction_[x][y][dir] != POINT) {
-                    switch (direction_[x][y][dir]) {
-                              // 上一个状态是什么/ 根据上一个状态和当前状态设置应该 move 的方向
-                              case UP: 
-                              case DOWN: 
-                              case LEFT: 
-                              case RIGHT: 
+                    switch (last_dir) {
+                              case RIGHT: return crt_dir == DOWN ? CLOCK : ANTI;
+                              case DOWN: return crt_dir == LEFT ? CLOCK : ANTI;
+                              case LEFT: return crt_dir == UP ? CLOCK : ANTI;
+                              case UP: return crt_dir == RIGHT ? CLOCK : ANTI;
+                              default: {
+                                        display(::: [dir %d]Unknown direction of boat!......\n, last_dir);
+                                        return SHIP;
+                              }
                     }
-          }*/
+          };
+          // 进入上一个追踪点
+          auto back_point_ = [](int &x, int &y, int &cdir_, int dir_) {
+                    auto &to_next_ =    dir_ == RIGHT       ? to_right_ : (
+                                        dir_ == LEFT        ? to_left_ : (
+                                        dir_ == UP          ? to_up_ : (
+                                                            to_down_ // dir == DOWN
+                                        )
+                              )
+                    );
+                    for (auto &[dx, dy, ddir_] : to_next_) {
+                              if (ddir_ != cdir_) continue;
+                              x -= dx, y -= dy;
+                              cdir_ = dir_;
+                              return;
+                    }
+                    display([ERROR] Can not trace back to the front point!\n);
+          };
 
-          ret.emplace_back(0);
+          // 不是POINT就代表存在上一个状态
+          while (direction_[x][y][dir] != POINT) {
+                    display(TRACE::: x %d y %d dir %d\n, x, y, dir);
+
+                    ret.emplace_back(confirm_dir_(direction_[x][y][dir], dir));
+                    back_point_(x, y, dir, direction_[x][y][dir]);
+          }
+          display(TRACE::: Terminal x %d y %d\n, x, y);
+
+          // if (ret.size()) ret.erase(ret.begin());
+          ret.cursor = ret.size() - 1;
           return ret;
 }
 
@@ -917,13 +905,6 @@ inline bool __check_position_boat_1 (int x, int y, int dir, void *args) {
           return false;
 }
 
-/**
- * 船在一个状态转换的其他状态
-*/
-const std::vector<std::tuple<int, int, int>> to_right_ { {0, 2, DOWN}, {0, 1, RIGHT}, {1, 1, UP} };
-const std::vector<std::tuple<int, int, int>> to_left_ { {0, -1, LEFT}, {0, -2, UP}, {-1, -1, DOWN} };
-const std::vector<std::tuple<int, int, int>> to_up_ { {-1, 0, UP}, {-1, 1, LEFT}, {-2, 0, RIGHT} };
-const std::vector<std::tuple<int, int, int>> to_down_ { {1, 0, DOWN}, {2, 0, LEFT}, {1, -1, RIGHT} };
 // 船寻路
 const Path 
 router_boat(
@@ -948,6 +929,8 @@ router_boat(
           // 检查船在 x y 处方向 dir 能否存在/ 判读锁
           auto __check_can_move = [&](int x, int y, int dir) {
                     auto __pos_valid = [&](int x, int y) {
+                              // 检查越界
+                              if (!(x >= 0 && x < N && y >= 0 && y < N)) return false;
                               return map_[x][y] == '*' || map_[x][y] == '~' || map_[x][y] == 'K' || map_[x][y] == 'C' || map_[x][y] == 'c' || map_[x][y] == 'T';
                     };
                     switch (dir) {
@@ -983,31 +966,35 @@ router_boat(
           std::set<std::tuple<int, int, int>> wait_;
           wait_.emplace(boat.x, boat.y, boat.dir);
 
-          int rot_c = 0;
+          /**
+           * 寻路的主体部分
+          */
           while (wait_.size()) {
-                    // display(::: BoatRouter::: wait_.size(): %ld and rot_c: %d ......\n, wait_.size(), rot_c++);
                     auto buff_wait = std::set<std::tuple<int, int, int>>();
                     for (auto &[x, y, dir] : wait_) {
                               // 首先检查这个位置是不是到了目标
                               if (__check_position(x, y, dir, args)) {
+                                        display(KPOINT::: Find K point [%d %d]......\n, x, y);
                                         // 构造并返回找到的路径
                                         return __trace_back_boat(direction_, x, y, dir);
                               }
 
                               // 再对这个位置的下一层做遍历
-                              auto &to_next_ =    dir == RIGHT        ? to_right_ : (
-                                                  dir == LEFT         ? to_left_ : (
-                                                  dir == UP           ? to_up_ : (
-                                                                        to_down_ // dir == DOWN
+                              auto &to_next_ =    dir == (int)RIGHT   ? to_right_ : (
+                                                  dir == (int)LEFT    ? to_left_ : (
+                                                  dir == (int)UP      ? to_up_ : (
+                                                                      to_down_ // dir == DOWN
                                                   )
                                         )
                               );
 
-                              // 对于三种转换
+                              // 对于三种转换/ dx dy是变化量，ddir_是变化后的朝向
                               for (auto &[dx, dy, ddir_] : to_next_) {
-                                        int xx = x + dx, yy = y + dy;
+                                        int xx = x + dx, yy = y + dy; // 变化后的 核心点 位置
+                                        if (!__check_can_move(xx, yy, ddir_)) continue;
+
                                         int dis_ = distance_[x][y][dir] + __check_distance_comsume(xx, yy, ddir_);
-                                        if (__check_can_move(xx, yy, ddir_) && dis_ < distance_[xx][yy][ddir_]) {
+                                        if (dis_ < distance_[xx][yy][ddir_]) {
                                                   distance_[xx][yy][ddir_] = dis_;
                                                   direction_[xx][yy][ddir_] = dir;        // 记录来源状态，可能由三种状态转换而来
                                                                       // 方便trace出Path
@@ -1045,23 +1032,45 @@ void perfix_action() noexcept {
 }
 // std::vector<Robot *> after_move;
 // 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作 X]
+std::vector<std::thread> tasks_;
 void robot_action() noexcept {
           display(Robot action::: Robot size %ld[ %d ]......\n, MyFrame::robots.size(), MyBase::robot_num);
 
-          for (auto &robot : MyFrame::robots) {
-                    if (robot.collision) robot.current_path.clear(), robot.stack_.clear(), robot.collision = false;  // 碰撞之后重新寻路
+          /*auto robot_task_ = [&](Robot *robot) {
+                    if (robot->collision) robot->current_path.clear(), robot->stack_.clear(), robot->collision = false;  // 碰撞之后重新寻路
 
-                    display("Mark 1"\n);
+                    // 机器人寻路，一帧中最多找ROUTER_LIMIT_PER_FRAME次路
+                    if (robot->current_path.empty()) {
+                              auto router = robot->goods_num ? router_dij(*robot) : router_dij(*robot, CMP_TARGET_NUM);
+
+                              // 目前就一条路径
+                              robot->current_path = std::move(router);
+                              if (robot->current_path.type_ == GOOD) {
+                                        int key = as_key(robot->current_path.tar_x, robot->current_path.tar_y);
+                                        MyFrame::goods.erase(key);
+                              }
+                              
+                    }
+          };
+
+          tasks_.resize(MyBase::robot_num);
+          for (int i = 0; i < MyBase::robot_num; ++i) tasks_[i] = std::thread(robot_task_, &MyFrame::robots[i]);
+          display(::: Parallel robot task count %ld created......\n, tasks_.size());
+
+          try {
+                    for (int i = 0; i < MyBase::robot_num; ++i) tasks_[i].join();
+          } catch (std::exception e) {
+                    display(::: ERROR::: exception from robot task: %s\n, e.what());
+          }
+          display(::: Parallel robot task done......\n);*/
+
+          for (auto &robot : MyFrame::robots) {
+                    
+                    if (robot.collision) robot.current_path.clear(), robot.stack_.clear(), robot.collision = false;  // 碰撞之后重新寻路
 
                     // 机器人寻路，一帧中最多找ROUTER_LIMIT_PER_FRAME次路
                     if (robot.current_path.empty() && MyFrame::router_times < ROUTER_LIMIT_PER_FRAME) {
-
-                              display("::: Mark 0"\n);
-
-                              auto router = router_dij(robot);
-
-                              display("::: Mark 1"\n);
-
+                              auto router = robot.goods_num ? router_dij(robot) : router_dij(robot, CMP_TARGET_NUM);
                               MyFrame::router_times++;      // 找路次数加一
                               if (router.empty()) {
                                         // 冗余 拿/放 操作
@@ -1072,7 +1081,7 @@ void robot_action() noexcept {
                                         continue;
                               }
 
-                              display("::: Mark 2"\n);
+                              display(::: Target price::: %d !!!\n, router.tar_price);
 
                               // 目前就一条路径
                               robot.current_path = std::move(router);
@@ -1083,9 +1092,14 @@ void robot_action() noexcept {
                               
                     }
 
-                    display("Mark 2"\n);
 
-                    if (robot.current_path.empty()) continue;
+                    if (robot.current_path.empty()) {
+                              /*if (robot.goods_num == 0) {
+                                        robot.get();
+                                        MyFrame::goods.erase(as_key(robot.x, robot.y));
+                              } else robot.pull();*/
+                              continue;
+                    }
                     // 机器人移动
                     
                     auto &path = robot.current_path;
@@ -1110,17 +1124,40 @@ void robot_action() noexcept {
           display(::: Robot action done...\n);
 }
 
-// 船的操作/ 分配泊点/ 装卸货物
+// 船的操作/ 分配泊点/ 装卸货物/ 期望[102 70] 实际[104 70]
 void boat_action() noexcept {
           display(Boat action......\n);
-          
           display(::: Boat number %ld......\n, MyFrame::boats.size());
 
           for (auto &boat : MyFrame::boats) {
-                    display(::: Action of boat %d...\n, boat.id);
-                    if (boat.status == 0 && boat.current_path.empty()) {
-                              boat.current_path = router_boat(boat);
-                              display(Find a path for boat %d path_size %ld...\n, boat.id, boat.current_path.size());
+                    display(::: Boat position [%d %d]......\n, boat.x, boat.y);
+
+                    if (boat.status == 0) { // 正常状态 
+                              if (boat.current_path.empty()) {
+                                        display(TRACE::: router from position %d %d...\n, boat.x, boat.y);
+                                        boat.current_path = router_boat(boat);  // 寻找一个最近的泊点
+                                        display(Boat find a path with distance %d\n, boat.current_path.get_distance());
+                              }
+
+                              if (boat.current_path.empty()) continue;
+                              // DEBUG
+                              // boat.rot(ANTI);
+
+                              auto &path = boat.current_path;
+                              if (!path.done()) {
+                                        int dir_ = path.get_direction();
+                                        display(TRACE::: dir is %d...\n, dir_);
+                                        if (dir_ == SHIP) boat.ship();
+                                        else boat.rot(dir_);
+                              } else {
+                                        if (boat.can_leave == false) boat.berth();
+                              }
+
+                    } else if (boat.status == 1) {          // 恢复状态
+                              display(TRACE::: Boat %d is recovering (distance %d).\n, boat.id, boat.current_path.get_distance());
+                    } else {  // 装载状态
+                              // boat.dept();        // 看看能去哪
+                              display(Boat %d is not in normal status.\n, boat.id);
                     }
           }
 
