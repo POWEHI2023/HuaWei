@@ -1189,7 +1189,15 @@ void Robot::pull() const noexcept {
 }
 
 inline void __force_lock(int x, int y) noexcept {
-          if (MyBase::grid[x][y] == 'c') {} 
+          if (MyBase::grid[x][y] == 'c') {
+                    auto &map_ = MyBase::grid;
+                    bool tag = false;
+                    if (!tag && x - 1 >= 0 && map_[x-1][y] == '.') tag = true;
+                    if (!tag && x + 1 < N && map_[x+1][y] == '.') tag = true;
+                    if (!tag && y - 1 >= 0 && map_[x][y-1] == '.') tag = true;
+                    if (!tag && y + 1 < N && map_[x][y+1] == '.') tag = true;
+                    if (tag) MyBase::zlocks_[x][y] = 1;
+          } 
           else if (MyBase::grid[x][y] == '>' || MyBase::grid[x][y] == 'R')  {} 
           else if (MyBase::grid[x][y] == '~' || MyBase::grid[x][y] == 'S') {} 
           else {    // 会发生碰撞的地界
