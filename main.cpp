@@ -9,6 +9,9 @@
  * 正在实现的东西
  * 
  * 1. 船寻路
+ * 2. 并发给泊点 拿放 货物，需要对一个泊点加互斥锁
+ * 3. 机器人寻路也可以并发，在寻路以后重新遍历所有机器人进行移动/ 船同理
+ * 4. 通过线程池减少线程的创建销毁/ 时间足够的话可能不需要
 */
 
 #include <iostream>
@@ -57,9 +60,9 @@ private:
 #define ROBOT_PRICE 2000
 
 #define ROBOT_LIMIT 10        // 设置一个最大量
-#define BOAT_LIMIT 5         // 设置一个最大量
+#define BOAT_LIMIT 1         // 设置一个最大量
 
-#define INIT_ROBOT_NUM 8      // 初始买几个机器人
+#define INIT_ROBOT_NUM 2      // 初始买几个机器人
 #define INIT_BOAT_NUM 1       // 初始买几个船
 
 #define ROUTER_LIMIT_PER_FRAME 5        // 每帧最多找几次路
@@ -70,7 +73,7 @@ private:
 typedef std::tuple<int, int> Position;
 enum Direction {RIGHT = 0, LEFT, UP, DOWN, POINT};
 constexpr int CLOCKWISE = 1 << 5;
-enum Rotation {CLOCK = CLOCKWISE, ANTI};
+enum Rotation {CLOCK = CLOCKWISE, ANTI, SHIP};
 
 #define as_key(x, y) ((x << 10) | y)
 #define as_position(key) ({ {key >> 10, key & 0x3FF} })
@@ -104,6 +107,7 @@ public:
 
           int tar_x, tar_y;
           TraceType type_;
+          int tar_price = 0;
 private:
           // int distance;
           int cursor;      // 指针从后往前
@@ -531,7 +535,11 @@ namespace BaseElem {
                     int robot_num;
                     scanf("%d", &robot_num);
                     // check the number of robot is right
-                    assert(robot_num == Base::robot_num);
+
+                    // display(TRACE::: Robot num %d and REAK::: Robot num %d...\n, robot_num, Base::robot_num);
+                    // assert(robot_num == Base::robot_num);
+                    Base::robot_num = robot_num;
+                    
                     robots.resize(robot_num);     // 确保有足够的位置
                     for (int i = 0; i < Base::robot_num; ++i) {
 
@@ -761,7 +769,7 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
                                                   // display(Find target_......\n);
                                                   auto path = __trace_back(trace_ , x, y);
                                                   path.type_ = robot.goods_num ? BERTH : GOOD;
-
+                                                  path.tar_price = MyFrame::goods[as_key(x, y)].price;
                                                   ret.emplace_back(path);
                                                   seen.emplace(as_key(x, y));
                                                   if (ret.size() >= cap) return 0;
@@ -807,9 +815,25 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
 
 
 // 船的trace_back/ TODO: 
+
 template <typename T>
 Path __trace_back_boat(T &direction_, int x, int y, int dir) {
           auto ret = Path();
+          /*auto confirm_dir_ = [&](int last_dir, int crt_dir) {
+                    if (last_dir == crt_dir) return SHIP;
+                    
+                    
+          };
+          while (direction_[x][y][dir] != POINT) {
+                    switch (direction_[x][y][dir]) {
+                              // 上一个状态是什么/ 根据上一个状态和当前状态设置应该 move 的方向
+                              case UP: 
+                              case DOWN: 
+                              case LEFT: 
+                              case RIGHT: 
+                    }
+          }*/
+
           ret.emplace_back(0);
           return ret;
 }
@@ -840,8 +864,6 @@ router_boat(
           void *args = NULL   // 比如传入一个Berth，判断是否到达这个berth
                               // 或者传入一个id，判断是否到达指定id的berth
 ) noexcept {
-          display(::: Router boat_ ......\n);
-          
           auto &map_ = MyBase::grid;
           // 引入锁/ ! zlocks_是单层的
           auto &locks_ = MyBase::zlocks_;
@@ -967,8 +989,8 @@ void robot_action() noexcept {
                               if (router.empty()) {
                                         // 冗余 拿/放 操作
                                         if (robot.goods_num == 0) {
-                                                  MyFrame::goods.erase(as_key(robot.x, robot.y));
                                                   robot.get();
+                                                  MyFrame::goods.erase(as_key(robot.x, robot.y));
                                         } else robot.pull();
                                         continue;
                               }
@@ -976,7 +998,8 @@ void robot_action() noexcept {
                               // 目前就一条路径
                               robot.current_path = std::move(router);
                               if (robot.current_path.type_ == GOOD) {
-                                        MyFrame::goods.erase(as_key(robot.current_path.tar_x, robot.current_path.tar_y));
+                                        int key = as_key(robot.current_path.tar_x, robot.current_path.tar_y);
+                                        MyFrame::goods.erase(key);
                               }
                               
                     }
@@ -1027,14 +1050,16 @@ void suffix_action() noexcept {
  * 扩展的Robot动作
 */
 
+long total_price_ = 0;
 void Robot::get() noexcept {
           Robot__::get();
           
-          int key = as_key(Robot::trace_x, Robot::trace_y);
-          if (MyFrame::goods.find_(key)) {
-                    auto &good = MyFrame::goods.get(key);
-                    current_price = good.price;
-          }
+          current_price = current_path.size() ? current_path.tar_price : (
+                    MyFrame::goods.find_(x, y) ? MyFrame::goods[as_key(x, y)].price : 0
+          );
+
+          total_price_ += current_price;
+          display(::: Pull::: total price %ld .\n, total_price_);
 }
 
 void Robot::pull() const noexcept {
@@ -1113,6 +1138,8 @@ void Robot::move(int dir) noexcept {
                     __force_lock(trace_x, trace_y), __force_unlock(x, y);
           } else {
                     // 前方有机器人挡路
+                    stack_.emplace_back(dir);                                   // 记录没完成的路径
+
                     trace_x = x, trace_y = y;
 
                     int priority_ = (dir == UP || dir == DOWN) ? 0 : 2;                   // 首先垂直避让
@@ -1136,7 +1163,6 @@ void Robot::move(int dir) noexcept {
                                         trace_x = ctrace_x, trace_y = ctrace_y;                     // 更新trace
                                         Robot__::move(direction_list[priority_]);                   // 移动
                                         
-                                        stack_.emplace_back(dir);                                   // 记录没完成的路径
                                         switch (direction_list[priority_]) {                        // 记录新增临时路径
                                                   case UP: stack_.emplace_back(DOWN); break;
                                                   case DOWN: stack_.emplace_back(UP); break;
