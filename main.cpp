@@ -287,6 +287,7 @@ namespace BaseElem {
 
                               grid = (char **)malloc(N * sizeof(char *));
                               for (int i = 0; i < N; ++i) grid[i] = (char *)malloc(N * sizeof(char));
+                              // grid.resize(N);
 
                               for (int i = 0; i < N; ++i) scanf("%s", grid[i]);
                               Base::ProcessMap();
@@ -304,13 +305,14 @@ namespace BaseElem {
                               CHECK_OK(); printf("OK\n"); fflush(stdout);
                     }
                     static inline void dealloc() noexcept {
-                              for (int i = 0; i < N; ++i) free(grid[i]);
-                              free(grid);
+                              for (int i = 0; i < N; ++i) if (grid[i]) free(grid[i]);
+                              if (grid) free(grid);
                     }
 
                     static BerthStor berths;
                     static int boat_capacity;
                     static char **grid;
+                    // static std::vector<std::string> grid;
 
                     static int robot_num;
                     static int boat_num;
@@ -650,6 +652,7 @@ int MyFrame::update() noexcept {
           display(Create tasks......\n);
           parallel_tasks[0] = std::thread(robot_action);
           parallel_tasks[1] = std::thread(boat_action);
+
           // robot_action();
           // boat_action();
           
@@ -740,6 +743,8 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
           check_position __check = robot.goods_num ? (__check_berth) : (__check_good);
           check_can_move __can_move = __robot_can_move;
           
+          display("::: ::: Mark 1"\n);
+
           int trace_[N][N];             
           int distance_[N][N];          
           for (int i = 0; i < N; ++i)
@@ -751,12 +756,72 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
           trace_[robot.x][robot.y] = POINT;
           distance_[robot.x][robot.y] = 0;
 
+          display("::: ::: Mark 2"\n);
+
           seen.clear();
           auto ret = std::vector<Path>();
           auto wait_ = std::set<Position>(); wait_.emplace(robot.x, robot.y);
+
+          display("::: ::: Mark 3"\n);
+
+          CYCLE__: while (wait_.size()) {
+                    std::set<Position> buff_wait;
+                    for (auto &pos : wait_) {
+                              auto [x, y] = pos;
+                              if (__check(x, y) && seen.find(as_key(x, y)) == seen.end()) {
+                                        display(Find target ? %d\n, MyFrame::goods.find_(as_key(x, y)));
+
+                                        // 可以容忍的距离/ 去泊点无所谓距离/ 去货物只能容忍货物的存在帧
+                                        int tolance_ =  robot.goods_num ? -1 : MyFrame::goods[as_key(x, y)].live;
+                                        display(tolance_: %d and distance_: %d\n, tolance_, distance_[x][y]);
+                                        if (tolance_ == -1 || distance_[x][y] <= tolance_) {
+                                                  // display(Find target_......\n);
+                                                  auto path = __trace_back(trace_ , x, y);
+                                                  path.type_ = robot.goods_num ? BERTH : GOOD;
+                                                  path.tar_price = MyFrame::goods[as_key(x, y)].price;
+                                                  ret.emplace_back(path);
+                                                  seen.emplace(as_key(x, y));
+                                                  if (ret.size() >= cap) goto RET__;
+                                        } else {
+                                                  display(Beyond the distance can be tolerated! No path is detected.\n);
+                                                  goto RET__;
+                                        }
+                              }
+
+                              int distance = distance_[x][y] + 1;
+
+                              // display("::: ::: Mark Inner distance %d"\n, distance);
+
+                              if (x - 1 >= 0 && __can_move(map_[x-1][y]) && distance < distance_[x-1][y]) {
+                                        trace_[x-1][y] = UP;
+                                        distance_[x-1][y] = distance;
+                                        buff_wait.emplace(x-1, y);
+                              }
+                              if (x + 1 < N && __can_move(map_[x+1][y]) && distance < distance_[x+1][y]) {
+                                        trace_[x+1][y] = DOWN;
+                                        distance_[x+1][y] = distance;
+                                        buff_wait.emplace(x+1, y);
+                              }
+                              if (y - 1 >= 0 && __can_move(map_[x][y-1]) && distance < distance_[x][y-1]) {
+                                        trace_[x][y-1] = LEFT;
+                                        distance_[x][y-1] = distance;
+                                        buff_wait.emplace(x, y-1);
+                              }
+                              if (y + 1 < N && __can_move(map_[x][y+1]) && distance < distance_[x][y+1]) {
+                                        trace_[x][y+1] = RIGHT;
+                                        distance_[x][y+1] = distance;
+                                        buff_wait.emplace(x, y+1);
+                              }
+                    }
+                    wait_ = buff_wait;
+          }
+
+          /*
           auto __traverse = [&]() -> int {
                     std::set<Position> buff_wait;
                     CYCLE__: for (auto &pos : wait_) {
+
+                              display("::: ::: Mark 3"\n);
 
                               auto [x, y] = pos;
                               if (__check(x, y) && seen.find(as_key(x, y)) == seen.end()) {
@@ -807,8 +872,11 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexce
                     wait_ = std::move(buff_wait);
                     goto CYCLE__;
                     
-          } ();
+          } ();*/
 
+          display("::: ::: Mark End"\n);
+
+          RET__:
           return __sift_and_lock(ret);
 }
 
@@ -978,13 +1046,22 @@ void perfix_action() noexcept {
 // std::vector<Robot *> after_move;
 // 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作 X]
 void robot_action() noexcept {
-          // display(Robot action......\n);
+          display(Robot action::: Robot size %ld[ %d ]......\n, MyFrame::robots.size(), MyBase::robot_num);
 
           for (auto &robot : MyFrame::robots) {
                     if (robot.collision) robot.current_path.clear(), robot.collision = false;  // 碰撞之后重新寻路
+
+                    display("Mark 1"\n);
+
                     // 机器人寻路，一帧中最多找ROUTER_LIMIT_PER_FRAME次路
                     if (robot.current_path.empty() && MyFrame::router_times < ROUTER_LIMIT_PER_FRAME) {
+
+                              display("::: Mark 0"\n);
+
                               auto router = router_dij(robot);
+
+                              display("::: Mark 1"\n);
+
                               MyFrame::router_times++;      // 找路次数加一
                               if (router.empty()) {
                                         // 冗余 拿/放 操作
@@ -995,6 +1072,8 @@ void robot_action() noexcept {
                                         continue;
                               }
 
+                              display("::: Mark 2"\n);
+
                               // 目前就一条路径
                               robot.current_path = std::move(router);
                               if (robot.current_path.type_ == GOOD) {
@@ -1003,6 +1082,8 @@ void robot_action() noexcept {
                               }
                               
                     }
+
+                    display("Mark 2"\n);
 
                     if (robot.current_path.empty()) continue;
                     // 机器人移动
@@ -1025,6 +1106,8 @@ void robot_action() noexcept {
                               robot.current_path.clear();   // 走完整条路径，忘掉之前的路径
                     }
           }
+
+          display(::: Robot action done...\n);
 }
 
 // 船的操作/ 分配泊点/ 装卸货物
@@ -1034,11 +1117,14 @@ void boat_action() noexcept {
           display(::: Boat number %ld......\n, MyFrame::boats.size());
 
           for (auto &boat : MyFrame::boats) {
+                    display(::: Action of boat %d...\n, boat.id);
                     if (boat.status == 0 && boat.current_path.empty()) {
                               boat.current_path = router_boat(boat);
                               display(Find a path for boat %d path_size %ld...\n, boat.id, boat.current_path.size());
                     }
           }
+
+          display(::: Boat action done......\n);
 }
 
 void suffix_action() noexcept {
