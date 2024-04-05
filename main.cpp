@@ -630,7 +630,7 @@ struct Loop {
           void free() { MyBase::dealloc(); }
 
           Loop() { init(); }
-          ~Loop() { free(); }
+          ~Loop() { display(LOOP EXECUTE OVER!\n); free(); }
 };
 
 int main() {
@@ -731,7 +731,7 @@ inline bool __check_good(int x, int y) noexcept { return MyFrame::goods.find_(x,
 
 typedef bool (*check_can_move) (char &);
 inline bool __both_robot_boat_move(char &c) noexcept { return c == 'C' || c == 'c'; }
-inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || /*c == 'R' ||*/ c == 'B' || __both_robot_boat_move(c); }
+inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
 
 std::set<int> seen;
 // 寻找路径，默认只找最近的
@@ -1049,7 +1049,7 @@ void robot_action() noexcept {
           display(Robot action::: Robot size %ld[ %d ]......\n, MyFrame::robots.size(), MyBase::robot_num);
 
           for (auto &robot : MyFrame::robots) {
-                    if (robot.collision) robot.current_path.clear(), robot.collision = false;  // 碰撞之后重新寻路
+                    if (robot.collision) robot.current_path.clear(), robot.stack_.clear(), robot.collision = false;  // 碰撞之后重新寻路
 
                     display("Mark 1"\n);
 
