@@ -58,10 +58,10 @@ private:
 #define BOAT_PRICE 8000
 #define ROBOT_PRICE 2000
 
-#define ROBOT_LIMIT 20        // 设置一个最大量
-#define BOAT_LIMIT 1         // 设置一个最大量
+#define ROBOT_LIMIT 15        // 设置一个最大量
+#define BOAT_LIMIT 5         // 设置一个最大量
 
-#define INIT_ROBOT_NUM 8      // 初始买几个机器人
+#define INIT_ROBOT_NUM 2      // 初始买几个机器人
 #define INIT_BOAT_NUM 1       // 初始买几个船
 
 #define ROUTER_LIMIT_PER_FRAME 1        // 每帧最多找几次路
@@ -1050,6 +1050,7 @@ Berth *__alloc_berth_for_boat(Boat &boat) noexcept {
           int score = -1;
           Berth *ret = nullptr;
           for (auto &berth : MyBase::berths) {
+                    if (berth.free_ == false) continue;
                     int score_ = berth.crt_num;
                     if (score_ > score) score = score_, ret = &berth;
           }
