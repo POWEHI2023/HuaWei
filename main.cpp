@@ -59,10 +59,10 @@ private:
 #define ROBOT_PRICE 2000
 
 #define ROBOT_LIMIT 15        // 设置一个最大量
-#define BOAT_LIMIT 5         // 设置一个最大量
+#define BOAT_LIMIT 0         // 设置一个最大量
 
 #define INIT_ROBOT_NUM 2      // 初始买几个机器人
-#define INIT_BOAT_NUM 1       // 初始买几个船
+#define INIT_BOAT_NUM 0       // 初始买几个船
 
 #define ROUTER_LIMIT_PER_FRAME 1        // 每帧最多找几次路
 #define CMP_TARGET_NUM        10         // 每次比较多少个货物确定要找的货物
@@ -75,8 +75,8 @@ enum Direction {RIGHT = 0, LEFT, UP, DOWN, POINT};
 constexpr int CLOCKWISE = 1 << 5;
 enum Rotation {CLOCK = CLOCKWISE, ANTI, SHIP};
 
-#define as_key(x, y) ((x << 10) | y)
-#define as_position(key) ({ {key >> 10, key & 0x3FF} })
+#define as_key(x, y) (((x) << 10) | (y))
+#define as_position(key) ({ {(key) >> 10, (key) & 0x3FF} })
 
 /**
  * 提前声明类型方便后续访问
@@ -99,8 +99,7 @@ Path __trace_back(int const map[N][N], int x, int y) noexcept;
 class Path: public Path__ {
 public:
           template <typename... TArgs>
-          Path(TArgs... args): Path__(std::forward<TArgs>(args)...), /*distance(0),*/ cursor(-1), tar_x(0), tar_y(0), type_(None) {}
-          // Path(int cap = 0): Path__(cap), distance(0) {}
+          Path(TArgs... args): Path__(std::forward<TArgs>(args)...), cursor(-1), tar_x(0), tar_y(0), type_(None) {}
           inline int get_distance() const noexcept { return cursor + 1; }
           inline bool done() const noexcept { return cursor < 0; }
           inline int get_direction() noexcept { return done() ? POINT : (*this)[cursor--]; }
@@ -109,7 +108,6 @@ public:
           TraceType type_;
           int tar_price = 0;
 private:
-          // int distance;
           int cursor;      // 指针从后往前
           friend Path __trace_back(int const [N][N], int, int) noexcept;
           friend Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir) noexcept;
@@ -133,8 +131,6 @@ namespace BaseElem {
                     int price; // 货物的价值
           };
           struct Robot__ {
-                    // int id, take_good, x, y, status;
-                    // take_good.1 == 带货/ status.0 == 异常/ status.1 == 正常
                     int id, x, y, goods_num;
 
                     inline void move(int dir) const noexcept { printf("move %d %d\n", id, dir); }
@@ -142,9 +138,6 @@ namespace BaseElem {
                     inline void pull() const noexcept { printf("pull %d\n", id); }
           };
           struct Boat__ {
-                    // int num, pos, status;
-                    // pos.-1 == 虚拟点/ status.0 == 运输中/ status.1 == 装货或运输完成/ status.2 == 等待泊位
-
                     int id, x, y, dir;
                     int goods_num, status;
                     // status.0 == 正常/ status.1 == 恢复/ status.2 == 装载/ dir与机器人Direction一致
@@ -297,15 +290,12 @@ namespace BaseElem {
           // Base
           struct Base {
                     static inline void init() noexcept {
-                              // display(Base init......\n);
 
                               grid = (char **)malloc(N * sizeof(char *));
                               for (int i = 0; i < N; ++i) grid[i] = (char *)malloc(N * sizeof(char));
-                              // grid.resize(N);
 
                               for (int i = 0; i < N; ++i) scanf("%s", grid[i]);
                               Base::ProcessMap();
-                              // Base::DisplayMap();
 
                               scanf("%d", &berth_num);
                               berths.resize(berth_num);
@@ -326,7 +316,6 @@ namespace BaseElem {
                     static BerthStor berths;
                     static int boat_capacity;
                     static char **grid;
-                    // static std::vector<std::string> grid;
 
                     static int robot_num;
                     static int boat_num;
@@ -374,6 +363,7 @@ namespace BaseElem {
                                         fprintf(stderr, "Purchae id out of boundary......\n");
                                         return false;
                               }
+
                               if constexpr (std::is_same_v<T, Robot>) {
                                         if (Frame::money < ROBOT_PRICE) return false;
 
@@ -382,7 +372,7 @@ namespace BaseElem {
 
                                         const auto [pur_x, pur_y] = (*this)[purchase_id];
                                         printf("lbot %d %d\n", pur_x, pur_y);
-                                        Frame::robots.push_back(Robot{
+                                        Frame::robots.push_back(Robot {
                                                   (int)Frame::robots.size(), pur_x, pur_y, 0,       // id/ x/ y/ goods_num
                                                   pur_x, pur_y                                      // trace_x/ trace_y
                                         });
@@ -413,9 +403,9 @@ namespace BaseElem {
                               good_in_range[id].price += good.price;
                     }
 
-                    inline void remove_good(const int id, const Good &good) const noexcept {
-                              good_in_range[id].num --;
-                              good_in_range[id].price -= good.price;
+                    void remove_good(const int id, const Good &good) const noexcept {
+                              // good_in_range[id].num --;
+                              // good_in_range[id].price -= good.price;
 
                               // 正确性检查
                               record_check__();
@@ -448,8 +438,12 @@ namespace BaseElem {
                               for (int j = 0; j < N; ++j) {
                                         if (grid[i][j] == 'R') robot_purchase_point.emplace_back(i, j);
                                         else if (grid[i][j] == 'S') boat_purchase_point.emplace_back(i, j);
-                                        else if (grid[i][j] == 'T') delivery_point.emplace_back(i, j);
+                                        // else if (grid[i][j] == 'T') delivery_point.emplace_back(i, j);
                               }
+                    }
+                    display(DEBUG::: robot_purchase_point size %ld.\n, robot_purchase_point.size());
+                    for (auto &[x, y] : robot_purchase_point) {
+                              display(Robot purchase {%d %d}.\n, x, y);
                     }
           }
 
@@ -625,6 +619,10 @@ int main() {
 int MyFrame::update() noexcept {
           if (Frame::update() == -1) return -1;
 
+          display(DEBUG::: Frame update.\n);
+          for (auto &[x, y] : MyBase::robot_purchase_point) {
+                    display(Robot purchase {%d %d}.\n, x, y);
+          }
           // 扩充的update信息
           // ...
 
@@ -650,15 +648,20 @@ int MyFrame::update() noexcept {
  * 购买机器人或者船
 */
 void MyFrame::purchase_action() noexcept {
-          // display(Purchase action......\n);
           if (need_boat > 0 && MyBase::boat_num < BOAT_LIMIT) {
                     int id = std::rand() % MyBase::boat_purchase_point.size();
-                    if (MyBase::boat_purchase_point.purchase(id)) need_boat--;
+
+                    if (MyBase::boat_purchase_point.purchase(id)) {
+                              need_boat--;
+                    }
           }
 
           if (need_robot > 0 && MyBase::robot_num < ROBOT_LIMIT) {
                     int id = MyBase::robot_purchase_point.find_purchase();
-                    if (MyBase::robot_purchase_point.purchase(id)) need_robot--;
+
+                    if (MyBase::robot_purchase_point.purchase(id)) {
+                              need_robot--;
+                    }
           }
 }
 
@@ -838,7 +841,7 @@ Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction
                                         )
                               )
                     );
-                    for (auto &[dx, dy, ddir_] : to_next_) {
+                    for (auto [dx, dy, ddir_] : to_next_) {
                               if (ddir_ != cdir_) continue;
                               x -= dx, y -= dy;
                               cdir_ = dir_;
@@ -1132,7 +1135,7 @@ void Robot::pull() const noexcept {
           MyFrame::price_count += current_price;
           // 当记时器结束的时候根据 上一次增加机器人后 每帧平均价值判断是否应该增加机器人/ 现在的逻辑是只要大于没增加的就再次增加，
                     // 可以设置一个阈值，当增加了多少才选择再次增加机器人
-          if(-- MyFrame::clock_for_margin_func == 0) {
+          if((MyFrame::clock_for_margin_func -= 1) == 0) {
                     double current_growth_ = (double)MyFrame::price_count / (double)(MyFrame::id - MyFrame::clock_id);
                     if (current_growth_ <= MyFrame::margin_growth) 
                               MyFrame::clock_for_margin_func = MyBase::robot_num;
