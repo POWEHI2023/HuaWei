@@ -163,7 +163,10 @@ namespace BaseElem {
 // TODO: 
 struct Berth: public BaseElem::Berth__ {
           int crt_num = 0;
-          std::mutex mtx;
+          // std::mutex mtx;
+
+          // 是否是空闲的，没船占用的
+          bool free_ = true;
 };
 struct Good: public BaseElem::Good__ {
           int purchase_rank = 0;
@@ -196,6 +199,14 @@ struct Boat: public BaseElem::Boat__ {
           Path current_path;            // 待走路径
 
           inline void move() noexcept;
+          inline void set_aim(Berth *berth) noexcept {
+                    aim = berth;
+                    berth->free_ = false;
+          }
+          inline void release_aim() noexcept {
+                    aim->free_ = true;
+                    aim = nullptr;
+          }
 };
 
 /**
@@ -848,6 +859,7 @@ const std::vector<std::tuple<int, int, int>> to_down_ { {1, 0, DOWN}, {2, 0, LEF
 */
 Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir) noexcept {
           auto ret = Path();
+          ret.tar_x = x, ret.tar_y = y; // 目标位置
           // 确定船的Path中每一个方向
           auto confirm_dir_ = [&](int last_dir, int crt_dir) {
                     if (last_dir == crt_dir) return SHIP;
@@ -900,6 +912,9 @@ typedef bool (*check_position_boat) (int x, int y, int dir, void *);
 inline bool __check_position_boat_default(int x, int y, int dir, void *args) {
           // 最简单的就是判断 核心点 到达K点
           return MyBase::grid[x][y] == 'K';
+}
+inline bool __check_position_boat_T(int x, int y, int dir, void *args) {
+          return MyBase::grid[x][y] == 'T';
 }
 inline bool __check_position_boat_1 (int x, int y, int dir, void *args) {
           return false;
@@ -1133,31 +1148,47 @@ void boat_action() noexcept {
                     display(::: Boat position [%d %d]......\n, boat.x, boat.y);
 
                     if (boat.status == 0) { // 正常状态 
+
+                              // 路径为空，代表 空闲
                               if (boat.current_path.empty()) {
-                                        display(TRACE::: router from position %d %d...\n, boat.x, boat.y);
                                         boat.current_path = router_boat(boat);  // 寻找一个最近的泊点
-                                        display(Boat find a path with distance %d\n, boat.current_path.get_distance());
-                              }
 
-                              if (boat.current_path.empty()) continue;
-                              // DEBUG
-                              // boat.rot(ANTI);
+                                        auto ret = MyBase::berths.end();
+                                        // 找到占用的泊位，然后占用泊位
+                                        if (boat.current_path.empty()) {        // 当前位置？寻路可能有些问题？
+                                                  ret = MyBase::berths.iter_find(boat.x, boat.y, [](int x, int y, Berth &berth) {
+                                                            return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
+                                                  });
+                                        } else { // 设置占用泊位
+                                                  ret = MyBase::berths.iter_find(boat.current_path.tar_x, boat.current_path.tar_y, [](int x, int y, Berth &berth) {
+                                                            return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
+                                                  });
+                                        }
 
-                              auto &path = boat.current_path;
-                              if (!path.done()) {
-                                        int dir_ = path.get_direction();
-                                        display(TRACE::: dir is %d...\n, dir_);
-                                        if (dir_ == SHIP) boat.ship();
-                                        else boat.rot(dir_);
-                              } else {
-                                        if (boat.can_leave == false) boat.berth();
+                                                  // 找到一个泊点
+                                        if (ret != MyBase::berths.end()) {
+                                                  boat.set_aim(&(*ret)); // 设置状态/ TODO::: 在装载状态结束时恢复这些状态位
+                                        } else {  // 没有找到?
+                                                  display(::: Can not find a berth for boat as a target......\n);
+                                        }
+                                        
                               }
+                              boat.move();
 
                     } else if (boat.status == 1) {          // 恢复状态
                               display(TRACE::: Boat %d is recovering (distance %d).\n, boat.id, boat.current_path.get_distance());
                     } else {  // 装载状态
-                              // boat.dept();        // 看看能去哪
-                              display(Boat %d is not in normal status.\n, boat.id);
+                              if  (boat.aim->crt_num <= boat.goods_num || boat.goods_num == MyBase::boat_capacity) {
+                                        boat.can_leave = true;
+                                        boat.aim->crt_num = std::max(boat.aim->crt_num - boat.goods_num, 0);
+                              }
+                              
+                              if (boat.can_leave) {
+                                        boat.dept();        // 看看能去哪
+                                        boat.release_aim();
+                                        // 送货
+                                        boat.current_path = router_boat(boat, __check_position_boat_T);
+                              }
                     }
           }
 
@@ -1308,6 +1339,44 @@ void Robot::move(int dir) noexcept {
 
 // TODO: 船有体积，所以移动还是寻路都有限制
 void Boat::move() noexcept {
-          Boat__::ship();
+          // Boat__::ship();
+          if (current_path.empty()) return;
 
+          auto &path = current_path;
+          if (!path.done()) {
+                    int dir_ = path.get_direction();
+                    display(TRACE::: dir is %d...\n, dir_);
+                    if (dir_ == SHIP) ship();
+                    else rot(dir_);
+          } else {
+                    // 空船到泊点，靠泊
+                    if (can_leave == false) berth();
+                    else {
+                              can_leave = false;
+                              
+                              current_path = router_boat(*this);  // 寻找一个最近的泊点
+
+                              auto ret = MyBase::berths.end();
+                              // 找到占用的泊位，然后占用泊位
+                              if (current_path.empty()) {        // 当前位置？寻路可能有些问题？
+                                        ret = MyBase::berths.iter_find(x, y, [](int x, int y, Berth &berth) {
+                                                  return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
+                                        });
+                              } else { // 设置占用泊位
+                                        ret = MyBase::berths.iter_find(current_path.tar_x, current_path.tar_y, [](int x, int y, Berth &berth) {
+                                                  return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
+                                        });
+                              }
+
+                                        // 找到一个泊点
+                              if (ret != MyBase::berths.end()) {
+                                        set_aim(&(*ret)); // 设置状态/ TODO::: 在装载状态结束时恢复这些状态位
+                              } else {  // 没有找到?
+                                        display(::: Can not find a berth for boat as a target......\n);
+                              }
+                    }
+          }
 }
+
+// 靠泊的时候，
+// void Boat::berth() noexcept {}
