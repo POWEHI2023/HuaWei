@@ -43,7 +43,7 @@ public:
           };
           // typedef std::priority_queue<>
 
-          inline int append_tack() noexcept {
+          inline int append_tack()   {
 
                     return task_id++;
           }
@@ -59,10 +59,10 @@ private:
 #define ROBOT_PRICE 2000
 
 #define ROBOT_LIMIT 15        // 设置一个最大量
-#define BOAT_LIMIT 0         // 设置一个最大量
+#define BOAT_LIMIT 1         // 设置一个最大量
 
 #define INIT_ROBOT_NUM 2      // 初始买几个机器人
-#define INIT_BOAT_NUM 0       // 初始买几个船
+#define INIT_BOAT_NUM 1       // 初始买几个船
 
 #define ROUTER_LIMIT_PER_FRAME 1        // 每帧最多找几次路
 #define CMP_TARGET_NUM        10         // 每次比较多少个货物确定要找的货物
@@ -88,7 +88,7 @@ class Path;
 enum TraceType { GOOD, BERTH, None };
 
 // 用来构造路径
-Path __trace_back(int const map[N][N], int x, int y) noexcept;
+Path __trace_back(int const map[N][N], int x, int y)  ;
 
 /**
  * 路径指针，用来移动
@@ -100,23 +100,23 @@ class Path: public Path__ {
 public:
           template <typename... TArgs>
           Path(TArgs... args): Path__(std::forward<TArgs>(args)...), cursor(-1), tar_x(0), tar_y(0), type_(None) {}
-          inline int get_distance() const noexcept { return cursor + 1; }
-          inline bool done() const noexcept { return cursor < 0; }
-          inline int get_direction() noexcept { return done() ? POINT : (*this)[cursor--]; }
+          inline int get_distance() const   { return cursor + 1; }
+          inline bool done() const   { return cursor < 0; }
+          inline int get_direction()   { return done() ? POINT : (*this)[cursor--]; }
 
           int tar_x, tar_y;
           TraceType type_;
           int tar_price = 0;
 private:
           int cursor;      // 指针从后往前
-          friend Path __trace_back(int const [N][N], int, int) noexcept;
-          friend Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir) noexcept;
+          friend Path __trace_back(int const [N][N], int, int)  ;
+          friend Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir)  ;
 };
 
-void perfix_action() noexcept;          // 预备动作
-void robot_action() noexcept;           // 机器人做出动作
-void boat_action() noexcept;            // 船做出动作
-void suffix_action() noexcept;
+void perfix_action()  ;          // 预备动作
+void robot_action()  ;           // 机器人做出动作
+void boat_action()  ;            // 船做出动作
+void suffix_action()  ;
 
 /**
  * 四个地图上的基本元素 [基本不会被修改]
@@ -133,19 +133,19 @@ namespace BaseElem {
           struct Robot__ {
                     int id, x, y, goods_num;
 
-                    inline void move(int dir) const noexcept { printf("move %d %d\n", id, dir); }
-                    inline void get() const noexcept { printf("get %d\n", id); }
-                    inline void pull() const noexcept { printf("pull %d\n", id); }
+                    inline void move(int dir) const   { printf("move %d %d\n", id, dir); }
+                    inline void get() const   { printf("get %d\n", id); }
+                    inline void pull() const   { printf("pull %d\n", id); }
           };
           struct Boat__ {
                     int id, x, y, dir;
                     int goods_num, status;
                     // status.0 == 正常/ status.1 == 恢复/ status.2 == 装载/ dir与机器人Direction一致
 
-                    inline void dept() const noexcept { printf("dept %d\n", id); }
-                    inline void berth() const noexcept { printf("berth %d\n", id); }
-                    inline void rot(int rot) const noexcept { printf("rot %d %d\n", id, rot - CLOCKWISE); }
-                    inline void ship() const noexcept { printf("ship %d\n", id); }
+                    inline void dept() const   { printf("dept %d\n", id); }
+                    inline void berth() const   { printf("berth %d\n", id); }
+                    inline void rot(int rot) const   { printf("rot %d %d\n", id, rot - CLOCKWISE); }
+                    inline void ship() const   { printf("ship %d\n", id); }
           };
 }
 
@@ -179,9 +179,9 @@ struct Robot: public BaseElem::Robot__ {
 
           std::vector<int> stack_; // 用于移动过程中动态添加的路径
 
-          inline void pull() const noexcept;
-          inline void move(int) noexcept;
-          inline void get() noexcept;
+          inline void pull() const  ;
+          inline void move(int)  ;
+          inline void get()  ;
 };
 
 struct Boat: public BaseElem::Boat__ {
@@ -191,12 +191,12 @@ struct Boat: public BaseElem::Boat__ {
           Berth *aim = nullptr;         // 目标泊点
           Path current_path;            // 待走路径
 
-          inline void move() noexcept;
-          inline void set_aim(Berth *berth) noexcept {
+          inline void move()  ;
+          inline void set_aim(Berth *berth)   {
                     aim = berth;
                     berth->free_ = false;
           }
-          inline void release_aim() noexcept {
+          inline void release_aim()   {
                     aim->free_ = true;
                     aim = nullptr;
           }
@@ -210,7 +210,7 @@ namespace BaseElem {
           template <typename T>
           class IfStor__ {
           public:
-                    inline bool find(int x, int y, const cmp fn = nullptr) noexcept {
+                    inline bool find(int x, int y, const cmp fn = nullptr)   {
                               return static_cast<T *>(this)->find_(x, y, fn);
                     }
           };
@@ -218,50 +218,70 @@ namespace BaseElem {
           typedef std::vector<Berth> BerthStor__;
           typedef std::unordered_map<int, Good> GoodStor__;
 
-          class BerthStor: public BerthStor__, public IfStor__<BerthStor> {
+          class BerthStor: /*public BerthStor__,*/ public IfStor__<BerthStor> {
           public:
-                    template <typename... TArgs>
-                    explicit BerthStor(TArgs... args): BerthStor__(std::forward<TArgs>(args)...) {}
+                    template <typename... TArgs> explicit BerthStor(TArgs... args): entity_( BerthStor__(std::forward<TArgs>(args)...) ) {}
 
                     inline decltype(auto) iter_find(int x, int y, const std::function<bool(int,int,Berth &)> &cmp = [](int x,int y, Berth &berth) {
                               return x == berth.x && y == berth.y;
                     }) {
-                              for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
-                              if (cmp(x, y, *iter)) return iter;
-                              return BerthStor__::end();
+                              display(ITER::: tar_x %d tar_y %d\n, x, y);
+                              for (auto iter = entity_.begin(); iter != entity_.end(); ++iter) {
+                                        display(CHECK::: berth %d x %d y %d\n, (*iter).id, (*iter).x, (*iter).y);
+                                        if (cmp(x, y, *iter)) return iter;
+                              }
+                              return entity_.end();
                     }
-
-                    inline decltype(auto) iter_find(int x, int y) noexcept {
-                              for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
+                    inline decltype(auto) iter_find(int x, int y)   {
+                              for (auto iter = entity_.begin(); iter != entity_.end(); ++iter)
                               if ((*iter).x == x && (*iter).y == y) return iter;
-                              return BerthStor__::end();
+                              return entity_.end();
                     }
-
                     // 接口方法
-                    inline bool find_(int x, int y, const cmp fn = nullptr) noexcept {
+                    inline bool find_(int x, int y, const cmp fn = nullptr)   {
                               if (fn == nullptr) {
-                                        for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
+                                        for (auto iter = entity_.begin(); iter != entity_.end(); ++iter)
                                         if ((*iter).x == x && (*iter).y == y) return true;
                                         return false;
                               } else {
-                                        for (auto iter = BerthStor__::begin(); iter != BerthStor__::end(); ++iter)
+                                        for (auto iter = entity_.begin(); iter != entity_.end(); ++iter)
                                         if (fn(x, y, *iter)) return true;
                                         return false;
                               }
                     }
+
+                    inline decltype(auto) operator[] (size_t index) { return entity_[index]; }
+                    inline decltype(auto) begin() { return entity_.begin(); }
+                    inline decltype(auto) end() { return entity_.end(); }
+                    inline decltype(auto) size() { return entity_.size(); }
+
+                    template <typename... TArgs> decltype(auto) resize(TArgs... args) { entity_.resize(std::forward<TArgs>(args)...); }
+                    template <typename... TArgs> decltype(auto) emplace_back(TArgs... args) { entity_.emplace_back(std::forward<TArgs>(args)...); }
+                    template <typename... TArgs> decltype(auto) push_back(TArgs... args) { entity_.push_back(std::forward<TArgs>(args)...); }
+          private:
+                    BerthStor__ entity_;
           };
 
-          class GoodStor: public GoodStor__, public IfStor__<GoodStor> {
+          class GoodStor: /*public GoodStor__,*/ public IfStor__<GoodStor> {
           public:
                     template <typename... TArgs>
-                    explicit GoodStor(TArgs... args): GoodStor__(std::forward<TArgs>(args)...) {}
+                    explicit GoodStor(TArgs... args): entity_( GoodStor__(std::forward<TArgs>(args)...) ) {}
 
                     // 货物就只有一个x、y，所以直接返回bool
-                    inline bool find_(int key) noexcept { return (GoodStor__::find(key) != GoodStor__::end()); }
+                    inline bool find_(int key)   { return (entity_.find(key) != entity_.end()); }
                               // 接口方法
-                    inline bool find_(int x, int y, const cmp fn = nullptr) noexcept { return find_(as_key(x, y)); }
-                    inline decltype(auto) get(int key) noexcept { return GoodStor__::operator[](key); }
-                    inline decltype(auto) get(int x, int y) noexcept { return (*this)[as_key(x, y)]; }
+                    inline bool find_(int x, int y, const cmp fn = nullptr)   { return find_(as_key(x, y)); }
+                    inline decltype(auto) get(int key)   { return entity_[key]; }
+                    inline decltype(auto) get(int x, int y)   { return entity_[as_key(x, y)]; }
+
+                    inline decltype(auto) operator[] (size_t index) { return entity_[index]; }
+                    inline decltype(auto) begin() { return entity_.begin(); }
+                    inline decltype(auto) end() { return entity_.end(); }
+
+                    inline decltype(auto) size() { return entity_.size(); }
+                    template <typename... TArgs> inline decltype(auto) erase(TArgs... args) { return entity_.erase(std::forward<TArgs>(args)...); }
+          private:
+                    GoodStor__ entity_;
           };
 }
 /** 
@@ -289,10 +309,16 @@ namespace BaseElem {
 
           // Base
           struct Base {
-                    static inline void init() noexcept {
+                    static inline void init()   {
 
                               grid = (char **)malloc(N * sizeof(char *));
-                              for (int i = 0; i < N; ++i) grid[i] = (char *)malloc(N * sizeof(char));
+                              if (grid == nullptr) {
+                                        display(ALLOC::: ERROR.\n);
+                              }
+                              for (int i = 0; i < N; ++i) 
+                                        if ((grid[i] = (char *)malloc(N * sizeof(char))) == NULL) {
+                                                  display(ALLOC::: ERROR.\n);
+                                        }
 
                               for (int i = 0; i < N; ++i) scanf("%s", grid[i]);
                               Base::ProcessMap();
@@ -301,16 +327,22 @@ namespace BaseElem {
                               berths.resize(berth_num);
                               for (int i = 0; i < berth_num; ++i) {
                                         int id; scanf("%d", &id);
+
+                                        display(BERTH::: %d -> id %d\n, i, id);
                                         scanf("%d%d%d", &berths[id].x, &berths[id].y, &berths[id].loading_speed);
-                                        berths[id].id = id;
+                                        berths[id].id = i;
                               }
                               scanf("%d", &boat_capacity);
                               
                               CHECK_OK(); printf("OK\n"); fflush(stdout);
                     }
-                    static inline void dealloc() noexcept {
+                    static inline void dealloc()   {
                               for (int i = 0; i < N; ++i) if (grid[i]) free(grid[i]);
                               if (grid) free(grid);
+
+                              // if (robot_purchase_point) delete<Robot>(robot_purchase_point);
+                              // if (boat_purchase_point) delete(boat_purchase_point);
+                              // if (delivery_point) delete(delivery_point);
                     }
 
                     static BerthStor berths;
@@ -326,23 +358,28 @@ namespace BaseElem {
                     static PurchasePoint<Boat> boat_purchase_point;
                     static std::vector<std::pair<int, int>> delivery_point;
           private:
-                    static void ProcessMap() noexcept;
+                    static void ProcessMap()  ;
           };
 
           // Frame
           struct Frame {
                     static int id, money;
                     static GoodStor goods;
-                    static std::vector<Robot> robots;
-                    static std::vector<Boat> boats;
+                    static std::vector<Robot> *robots;
+                    static std::vector<Boat> *boats;
 
                     static int gap_id;
                     
-                    static inline void init() noexcept {
-                              Frame::robots.reserve(ROBOT_LIMIT);
-                              Frame::boats.reserve(BOAT_LIMIT);
+                    static inline void init()   {
+                              Frame::robots->reserve(ROBOT_LIMIT);
+                              Frame::boats->reserve(BOAT_LIMIT);
                     }
-                    static inline int update() noexcept;
+                    static inline int update()  ;
+
+                    static inline void dealloc() {
+                              if (robots) delete(robots);
+                              if (boats) delete(boats);
+                    }
           };
 
           /**
@@ -350,16 +387,17 @@ namespace BaseElem {
           */
 
           template <typename T>
-          class PurchasePoint: public PurchasePoint__ {
+          class PurchasePoint/*: public PurchasePoint__*/ {
           public:
                     template <typename... TArgs>
-                    explicit PurchasePoint(TArgs... args): PurchasePoint__(std::forward<TArgs>(args)...) {
-                              good_in_range.resize(PurchasePoint__::size(), {0, 0});
+                    explicit PurchasePoint(TArgs... args)/*: PurchasePoint__(std::forward<TArgs>(args)...)*/ {
+                              entity_ = PurchasePoint__(std::forward<TArgs>(args)...);
+                              good_in_range.resize(entity_.size(), {0, 0});
                     }
                     
                     // make instance in purchase/ robot or boat
-                    bool purchase(int purchase_id) const noexcept {
-                              if (purchase_id >= PurchasePoint__::size()) {
+                    bool purchase(int purchase_id) const   {
+                              if (purchase_id >= entity_.size()) {
                                         fprintf(stderr, "Purchae id out of boundary......\n");
                                         return false;
                               }
@@ -370,10 +408,10 @@ namespace BaseElem {
                                         Base::robot_num++;
                                         Frame::money -= ROBOT_PRICE;   // 更新数据
 
-                                        const auto [pur_x, pur_y] = (*this)[purchase_id];
+                                        const auto [pur_x, pur_y] = entity_[purchase_id];
                                         printf("lbot %d %d\n", pur_x, pur_y);
-                                        Frame::robots.push_back(Robot {
-                                                  (int)Frame::robots.size(), pur_x, pur_y, 0,       // id/ x/ y/ goods_num
+                                        Frame::robots->push_back(Robot {
+                                                  (int)Frame::robots->size(), pur_x, pur_y, 0,       // id/ x/ y/ goods_num
                                                   pur_x, pur_y                                      // trace_x/ trace_y
                                         });
                               } else {
@@ -382,36 +420,28 @@ namespace BaseElem {
                                         Base::boat_num++;
                                         Frame::money -= BOAT_PRICE;
 
-                                        const auto [xx, yy] = (*this)[purchase_id];
+                                        const auto [xx, yy] = entity_[purchase_id];
                                         printf("lboat %d %d\n", xx, yy);
                               }
 
                               return true;
                     }
 
-                    struct Record { int num, price; };
-                    mutable std::vector<Record> good_in_range;
-
                     template <typename... TArgs>
-                    inline void emplace_back(TArgs&... __args) noexcept {
-                              PurchasePoint__::emplace_back(std::forward<TArgs>(__args)...);
-                              good_in_range.resize(PurchasePoint__::size());
+                    inline void emplace_back(TArgs&... __args)   {
+                              // PurchasePoint__::emplace_back(std::forward<TArgs>(__args)...);
+                              entity_.emplace_back(std::forward<TArgs>(__args)...);
+                              good_in_range.resize(entity_.size());
                     }
-
-                    inline void append_good(const int id, const Good &good) const noexcept {
-                              good_in_range[id].num ++;
-                              good_in_range[id].price += good.price;
+                    inline void append_good(const int id, const Good &good) const   {
+                              (good_in_range[id].num)++;
+                              (good_in_range[id].price) += good.price;
                     }
-
-                    void remove_good(const int id, const Good &good) const noexcept {
-                              // good_in_range[id].num --;
-                              // good_in_range[id].price -= good.price;
-
-                              // 正确性检查
-                              record_check__();
+                    void remove_good(const int id, const Good &good) const   {
+                              (good_in_range[id].num)--;
+                              (good_in_range[id].price) -= good.price;
                     }
-
-                    inline double find_purchase() const noexcept {
+                    inline double find_purchase() const   {
                               double density_ = 0;
                               int ret = 0, ptr = 0;
                               for (auto &[num, price] : good_in_range) {
@@ -425,15 +455,22 @@ namespace BaseElem {
                               return ret;
                     }
 
+                    decltype(auto) operator[] (int index) { return entity_[index]; }
+                    decltype(auto) begin() { return entity_.begin(); }
+                    decltype(auto) end() { return entity_.end(); }
+                    decltype(auto) rbegin() { return entity_.rbegin(); }
+                    decltype(auto) rend() { return entity_.rend(); }
+
+                    decltype(auto) size() { return entity_.size(); }
           private:
-                    inline void record_check__() const noexcept {
-                              for (auto &rec : good_in_range) 
-                              assert(rec.num >= 0 && rec.price >= 0);
-                    }
+
+                    std::vector< std::tuple<int, int> > entity_;
+                    struct Record { int num, price; };
+                    mutable std::vector<Record> good_in_range;
           };
 
 
-          void Base::ProcessMap() noexcept {
+          void Base::ProcessMap()   {
                     for (int i = 0; i < N; ++i) {
                               for (int j = 0; j < N; ++j) {
                                         if (grid[i][j] == 'R') robot_purchase_point.emplace_back(i, j);
@@ -444,6 +481,10 @@ namespace BaseElem {
                     display(DEBUG::: robot_purchase_point size %ld.\n, robot_purchase_point.size());
                     for (auto &[x, y] : robot_purchase_point) {
                               display(Robot purchase {%d %d}.\n, x, y);
+                    }
+
+                    for (auto &[x, y] : boat_purchase_point) {
+                              display(Boat purchase {%d %d}.\n, x, y);
                     }
           }
 
@@ -472,11 +513,11 @@ namespace BaseElem {
           int Frame::gap_id = 0;
           int Frame::money = 0;
           GoodStor Frame::goods = GoodStor();
-          std::vector<Robot> Frame::robots = std::vector<Robot>();
-          std::vector<Boat> Frame::boats = std::vector<Boat>();
+          std::vector<Robot> *Frame::robots = new std::vector<Robot>();
+          std::vector<Boat> *Frame::boats = new std::vector<Boat>();
 
           std::vector<int> buffer;
-          int Frame::update() noexcept {
+          int Frame::update()   {
                     int crt_id, good_num;
                     if (scanf("%d%d", &crt_id, &money) == EOF) return -1;
                     gap_id = crt_id - id;
@@ -501,7 +542,7 @@ namespace BaseElem {
                               if (price != 0) goods[as_key(x, y)] = ({
                                         int distance_ = INT_MAX, pur_id = -1;
                                         for (int i = 0; i < Base::robot_purchase_point.size(); ++i) {
-                                                  const auto [xx, yy] = Base::robot_purchase_point[i];
+                                                  const auto [xx, yy] = (Base::robot_purchase_point)[i];
                                                   int dis_ = std::abs(xx - x) + std::abs(yy - y);
                                                   if (dis_ < distance_) {
                                                             distance_ = dis_;
@@ -524,22 +565,22 @@ namespace BaseElem {
                     int robot_num;
                     scanf("%d", &robot_num);
                     Base::robot_num = robot_num;
-                    robots.resize(robot_num);     // 确保有足够的位置
+                    robots->resize(robot_num);     // 确保有足够的位置
                     for (int i = 0; i < Base::robot_num; ++i) {
 
                               // 机器人信息来的顺序保持为 0 - n ？
                               int id;
                               scanf("%d", &id);
                               // scanf("%d%d%d%d", &robots[i].id, &robots[i].goods_num, &robots[i].x, &robots[i].y);
-                              robots[id].id = id;
-                              scanf("%d%d%d", &robots[id].goods_num, &robots[id].x, &robots[id].y);
+                              (*robots)[id].id = id;
+                              scanf("%d%d%d", &(*robots)[id].goods_num, &(*robots)[id].x, &(*robots)[id].y);
                     }
 
                     int boat_num;
                     scanf("%d", &boat_num);
-                    boats.resize(boat_num);       // 确保有足够的位置
+                    boats->resize(boat_num);       // 确保有足够的位置
                     for (int i = 0; i < Base::boat_num; ++i) {
-                              scanf("%d%d%d%d%d%d", &boats[i].id, &boats[i].goods_num, &boats[i].x, &boats[i].y, &boats[i].dir, &boats[i].status);
+                              scanf("%d%d%d%d%d%d", &(*boats)[i].id, &(*boats)[i].goods_num, &(*boats)[i].x, &(*boats)[i].y, &(*boats)[i].dir, &(*boats)[i].status);
                     }
 
                     return id;
@@ -556,7 +597,7 @@ struct MyBase: public BaseElem::Base {
           static std::vector< std::vector< std::vector<int> > > locks_;
           static std::vector< std::vector<int> > zlocks_;
 
-          static inline void init() noexcept {
+          static inline void init()   {
                     Base::init();
                     // int [N][N][ROBOT_NUM]
                     locks_.resize(N, std::vector< std::vector<int> >(N, std::vector<int>(ROBOT_LIMIT, 0)));
@@ -574,15 +615,15 @@ struct MyFrame: public BaseElem::Frame {
           static double margin_growth;
           static int router_times;
 
-          static int update() noexcept;
-          static inline void init() noexcept { 
+          static int update()  ;
+          static inline void init()   { 
                     Frame::init(); 
 
                     MyFrame::clock_id = MyFrame::id;
           }
 
           // 购买的动作，是否购买机器人或者船......
-          static inline void purchase_action() noexcept;
+          static inline void purchase_action()  ;
 };
 int MyFrame::clock_for_margin_func { 1 };
 int MyFrame::clock_id { 0 };
@@ -611,18 +652,28 @@ struct Loop {
 };
 
 int main() {
-          for (Loop self;;)
-          if (self.Run() == -1) return 0;
+          try {
+                    for (Loop self;;)
+                    if (self.Run() == -1) return 0;
+          } catch (std::exception e) {
+                    display(ABORTED ERROR: %s\n, e.what());
+          }
 }
 
 
-int MyFrame::update() noexcept {
+int MyFrame::update()   {
           if (Frame::update() == -1) return -1;
 
           display(DEBUG::: Frame update.\n);
           for (auto &[x, y] : MyBase::robot_purchase_point) {
                     display(Robot purchase {%d %d}.\n, x, y);
           }
+
+          display(Boat purchase point size %ld.\n, MyBase::boat_purchase_point.size());
+          for (auto &[x, y] : MyBase::boat_purchase_point) {
+                    display(Boat purchase {%d %d}.\n, x, y);
+          }
+
           // 扩充的update信息
           // ...
 
@@ -633,6 +684,10 @@ int MyFrame::update() noexcept {
           parallel_tasks[0] = std::thread(robot_action);
           parallel_tasks[1] = std::thread(boat_action);
           for (int i = 0; i < 2; ++i) parallel_tasks[i].join();
+
+          // robot_action();
+
+          // boat_action();
                     
           // 购买动作
           purchase_action();
@@ -647,12 +702,15 @@ int MyFrame::update() noexcept {
  * 当能够购买的数量大于0，并且当前存在数量小于最大数量
  * 购买机器人或者船
 */
-void MyFrame::purchase_action() noexcept {
+void MyFrame::purchase_action()   {
           if (need_boat > 0 && MyBase::boat_num < BOAT_LIMIT) {
                     int id = std::rand() % MyBase::boat_purchase_point.size();
 
                     if (MyBase::boat_purchase_point.purchase(id)) {
                               need_boat--;
+                    } else {
+                              // 强制先买船
+                              return;
                     }
           }
 
@@ -672,7 +730,7 @@ void MyFrame::purchase_action() noexcept {
 */
 
 // 上是x-1，下是x+1，右是y+1，左是y-1
-Path __trace_back(int const map[N][N], int x, int y) noexcept {
+Path __trace_back(int const map[N][N], int x, int y)   {
           Path ret;
           ret.tar_x = x; ret.tar_y = y;
           while (map[x][y] != POINT) {
@@ -697,7 +755,7 @@ Path __trace_back(int const map[N][N], int x, int y) noexcept {
  * 筛选路径，只保留一条路径并且对路径进行避免碰撞的操作
  *        ::: 如果不在规划路径时进行碰撞规避，那就只筛选出一条路径
 */
-inline Path __sift_and_lock(std::vector<Path> &path) noexcept {
+inline Path __sift_and_lock(std::vector<Path> &path)   {
           if (path.empty()) return Path();        // 没有找到路径
           if (path.size() == 1) return path[0];     // 目前router_dij就找了一条路
 
@@ -716,16 +774,16 @@ inline Path __sift_and_lock(std::vector<Path> &path) noexcept {
 }
 
 typedef bool (*check_position) (int, int);
-inline bool __check_berth(int x, int y) noexcept { return (MyBase::grid[x][y] == 'B'); }
-inline bool __check_good(int x, int y) noexcept { return MyFrame::goods.find_(x, y); }
+inline bool __check_berth(int x, int y)   { return (MyBase::grid[x][y] == 'B'); }
+inline bool __check_good(int x, int y)   { return MyFrame::goods.find_(x, y); }
 
 typedef bool (*check_can_move) (char &);
-inline bool __both_robot_boat_move(char &c) noexcept { return c == 'C' || c == 'c'; }
-inline bool __robot_can_move(char &c) noexcept { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
+inline bool __both_robot_boat_move(char &c)   { return c == 'C' || c == 'c'; }
+inline bool __robot_can_move(char &c)   { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
 
 std::set<int> seen;
 // 寻找路径，默认只找最近的
-const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1) noexcept {
+const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1)   {
           auto &map_ = MyBase::grid;
           // 加锁的操作转移到__sift_and_lock()中，所以这里设置不可修改locks_
           const auto &locks_ = MyBase::locks_;
@@ -816,7 +874,7 @@ const std::vector<std::tuple<int, int, int>> to_down_ { {1, 0, DOWN}, {2, 0, LEF
  * 2. 直行 相等
  * 3. 左转 右->上/ 下->右/ 左->下/ 上->左
 */
-Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir) noexcept {
+Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir)   {
           auto ret = Path();
           ret.tar_x = x, ret.tar_y = y; // 目标位置
           // 确定船的Path中每一个方向
@@ -873,10 +931,7 @@ inline bool __check_position_boat_T(int x, int y, int dir, void *args) {
 inline bool __check_position_boat_1 (int x, int y, int dir, void *args) {
           Berth *berth = (Berth *)args;
           if (MyBase::grid[x][y] == 'K') {
-                    auto ret = MyBase::berths.iter_find(x, y, [](int x, int y, Berth &berth) {
-                              return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
-                    });
-                    return ret != MyBase::berths.end();
+                    if (std::abs(x - berth->x) < 9 && std::abs(y - berth->y) < 9) return true;
           }
           return false;
 }
@@ -885,10 +940,10 @@ inline bool __check_position_boat_1 (int x, int y, int dir, void *args) {
 const Path 
 router_boat(
           Boat &boat, 
-          const check_position_boat __check_position = __check_position_boat_default, 
-          void *args = NULL   // 比如传入一个Berth，判断是否到达这个berth
+          const check_position_boat __check_position, // = __check_position_boat_default, 
+          void *args // = NULL   // 比如传入一个Berth，判断是否到达这个berth
                               // 或者传入一个id，判断是否到达指定id的berth
-) noexcept {
+)   {
           auto &map_ = MyBase::grid;
           // 引入锁/ ! zlocks_是单层的
           auto &locks_ = MyBase::zlocks_;
@@ -985,10 +1040,10 @@ router_boat(
 }
 
 // 在机器人和船行动前先进行的操作
-void perfix_action() noexcept {
+void perfix_action()   {
           MyFrame::router_times = 0;    // 找路次数清零
           // 检查机器人位置的正确性
-          for (auto &robot : MyFrame::robots) {
+          for (auto &robot : *MyFrame::robots) {
                     if (robot.x != robot.trace_x || robot.y != robot.trace_y) {
                               // 归位
                               robot.collision = true;
@@ -1000,8 +1055,8 @@ void perfix_action() noexcept {
 // std::vector<Robot *> after_move;
 // 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作 X]
 std::vector<std::thread> tasks_;
-void robot_action() noexcept {
-          for (auto &robot : MyFrame::robots) {
+void robot_action()   {
+          for (auto &robot : *MyFrame::robots) {
                     
                     if (robot.collision) robot.current_path.clear(), robot.stack_.clear(), robot.collision = false;  // 碰撞之后重新寻路
 
@@ -1049,44 +1104,67 @@ void robot_action() noexcept {
           }
 }
 
-Berth *__alloc_berth_for_boat(Boat &boat) noexcept {
+Berth *__alloc_berth_for_boat(Boat &boat)   {
           int score = -1;
           Berth *ret = nullptr;
           for (auto &berth : MyBase::berths) {
                     if (berth.free_ == false) continue;
                     int score_ = berth.crt_num;
+                    display(SCORE::: berth %d has crt_num %d\n, berth.id, berth.crt_num);
                     if (score_ > score) score = score_, ret = &berth;
           }
           return ret;
 }
+
+void display_path(const Path &path) {
+          for (auto x : path) {
+                    switch (x) {
+                              case CLOCK: display(CLOCL|); break;
+                              case ANTI: display(ANTI|); break;
+                              case SHIP: display(SHIP|); break;
+                              case LEFT: display(LEFT|); break;
+                              case RIGHT: display(RIGHT|); break;
+                              case UP: display(UP|); break;
+                              case DOWN: display(DOWN|); break;
+                              default: {
+                                        display(UNKNOWN|);
+                              }
+                    }
+          }
+          display(\n);
+}
 // 船的操作/ 分配泊点/ 装卸货物
-void boat_action() noexcept {
-          for (auto &boat : MyFrame::boats) {
+void boat_action()   {
+          for (auto &boat : *MyFrame::boats) {
                     if (boat.status == 0) { // 正常状态 
                               // 路径为空，代表 空闲
                               if (boat.current_path.empty()) {
                                         auto tar_berth = __alloc_berth_for_boat(boat);
                                         if (tar_berth == nullptr) { continue; }
-                                        display(To berth %d [num %d]...\n, tar_berth->id, tar_berth->crt_num);
-                                        boat.current_path = router_boat(boat, __check_position_boat_1, tar_berth);  // 寻找一个最近的泊点
 
-                                        auto ret = MyBase::berths.end();
-                                        // 找到占用的泊位，然后占用泊位
-                                        if (boat.current_path.empty()) {        // 当前位置？寻路可能有些问题？
-                                                  display(::: Empty Boat Path\n);
-                                                  ret = MyBase::berths.iter_find(boat.x, boat.y, [](int x, int y, Berth &berth) {
-                                                            return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
-                                                  });
-                                        } else { // 设置占用泊位
-                                                  ret = MyBase::berths.iter_find(boat.current_path.tar_x, boat.current_path.tar_y, [](int x, int y, Berth &berth) {
-                                                            return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
-                                                  });
-                                        }
+                                        if (!boat.can_leave) {
+                                                  display(ROUTER:: To berth %d [num %d]...\n, tar_berth->id, tar_berth->crt_num);
+                                                  boat.current_path = router_boat(boat, __check_position_boat_1, tar_berth);  // 寻找一个最近的泊点
+                                                  display(ROUTER:: boat router tarx %d tary %d\n, boat.current_path.tar_x, boat.current_path.tar_y);
 
-                                        // 找到一个泊点
-                                        if (ret != MyBase::berths.end()) {
-                                                  boat.set_aim(&(*ret)); // 设置状态/ TODO::: 在装载状态结束时恢复这些状态位
-                                        }
+                                                  auto ret = MyBase::berths.end();
+                                                  // 找到占用的泊位，然后占用泊位
+                                                  if (boat.current_path.empty()) {        // 当前位置？寻路可能有些问题？
+                                                            display(::: Empty Boat Path\n);
+                                                            ret = MyBase::berths.iter_find(boat.x, boat.y, [](int x, int y, Berth &berth) {
+                                                                      return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
+                                                            });
+                                                  } else { // 设置占用泊位
+                                                            ret = MyBase::berths.iter_find(boat.current_path.tar_x, boat.current_path.tar_y, [](int x, int y, Berth &berth) {
+                                                                      return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
+                                                            });
+                                                  }
+
+                                                  // 找到一个泊点
+                                                  if (ret != MyBase::berths.end()) {
+                                                            boat.set_aim(&(*ret)); // 设置状态/ TODO::: 在装载状态结束时恢复这些状态位
+                                                  }
+                                        } else boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
                               }
                               boat.move();
 
@@ -1101,14 +1179,20 @@ void boat_action() noexcept {
                               if (boat.can_leave) {
                                         boat.dept();        // 看看能去哪
                                         boat.release_aim();
+                                        boat.current_path.clear();
                                         // 送货
-                                        boat.current_path = router_boat(boat, __check_position_boat_T);
+                                        // display(BOAT::: from[%d %d]\n, boat.x, boat.y);
+                                        // boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
+                                        // display(BOAT::: to T[%d %d]\n, boat.current_path.tar_x, boat.current_path.tar_y);
+                                        // display_path(boat.current_path);
+
+                                        // boat.move();
                               }
                     }
           }
 }
 
-void suffix_action() noexcept {
+void suffix_action()   {
           
 }
 
@@ -1118,7 +1202,7 @@ void suffix_action() noexcept {
 */
 
 long total_price_ = 0;
-void Robot::get() noexcept {
+void Robot::get()   {
           Robot__::get();
           
           current_price = current_path.size() ? current_path.tar_price : (
@@ -1128,7 +1212,7 @@ void Robot::get() noexcept {
           total_price_ += current_price;
 }
 
-void Robot::pull() const noexcept {
+void Robot::pull() const   {
           Robot__::pull();
 
           // 更新MyFrame判断是否增加机器人的数据
@@ -1141,7 +1225,7 @@ void Robot::pull() const noexcept {
                               MyFrame::clock_for_margin_func = MyBase::robot_num;
                     else {
                               MyFrame::need_robot++;
-                              if (((MyFrame::need_boat + MyFrame::robots.size()) >> 1) > (MyFrame::need_boat + MyFrame::boats.size())) 
+                              if (((MyFrame::need_boat + MyFrame::robots->size()) >> 1) > (MyFrame::need_boat + MyFrame::boats->size())) 
                                         MyFrame::need_boat++;         // 船的数量为机器人的一半/ 为2的时候是1/4/ 为3的时候是1/8
                               MyFrame::clock_for_margin_func = MyBase::robot_num + 1;     // 刷新间隔增加
                     }
@@ -1160,12 +1244,12 @@ void Robot::pull() const noexcept {
           });
 
           if (ret != MyBase::berths.end()) {
+                    display(PUT::: berth is num + 1 [%d]\n, (*ret).id);
                     (*ret).crt_num += 1;
-                    display(Berth %d current num %d...\n, (*ret).id, (*ret).crt_num);
           }
 }
 
-inline void __force_lock(int x, int y) noexcept {
+inline void __force_lock(int x, int y)   {
           if (MyBase::grid[x][y] == 'c') {
                     auto &map_ = MyBase::grid;
                     bool tag = false;
@@ -1182,11 +1266,11 @@ inline void __force_lock(int x, int y) noexcept {
           }
           // return true;
 }
-inline void __force_unlock(int x, int y) noexcept { MyBase::zlocks_[x][y] = 0; }
+inline void __force_unlock(int x, int y)   { MyBase::zlocks_[x][y] = 0; }
 
 // 用于选择优先避让方向
 std::vector<int> direction_list {LEFT, RIGHT, UP, DOWN};
-void Robot::move(int dir) noexcept {
+void Robot::move(int dir)   {
           // int otrace_x = trace_x, otrace_y = trace_y;
           auto &zlocks_ = MyBase::zlocks_;
 
@@ -1243,7 +1327,7 @@ void Robot::move(int dir) noexcept {
           }
 }
 
-void Boat::move() noexcept {
+void Boat::move()   {
           // Boat__::ship();
           if (current_path.empty()) return;
 
@@ -1263,4 +1347,4 @@ void Boat::move() noexcept {
 }
 
 // 靠泊的时候，
-// void Boat::berth() noexcept {}
+// void Boat::berth()   {}

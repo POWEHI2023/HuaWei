@@ -1,9 +1,9 @@
 #!/bin/bash
 
-release_dir="./Release"
+release_dir="./LinuxRelease"
 
-if test -z "$(g++-13 -O2 -o main main.cpp)"; then
-          mv main ${release_dir}/demo
+if test -z "$(g++ -o main main.cpp)"; then
+          mv main ${release_dir}/Demo
           cd ${release_dir}
           bash ./run_simple_demo.sh
 fi
