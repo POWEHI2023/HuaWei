@@ -31,6 +31,7 @@
 #include <exception>
 #include <cstring>
 #include <mutex>
+#include <unordered_set>
 
 /**
  * 线程池实现
@@ -57,6 +58,8 @@ private:
 #define N 200
 #define BOAT_PRICE 8000
 #define ROBOT_PRICE 2000
+
+#define MAX_BOAT_LIMIT 5     // BOAT_LIMIT不应该超过MAX_BOAT_LIMIT
 
 #define ROBOT_LIMIT 15        // 设置一个最大量
 #define BOAT_LIMIT 1         // 设置一个最大量
@@ -109,7 +112,7 @@ public:
           int tar_price = 0;
 private:
           int cursor;      // 指针从后往前
-          friend Path __trace_back(int const [N][N], int, int)  ;
+          friend Path __trace_back(std::vector<std::vector<int>> &, int, int)  ;
           friend Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction_, int x, int y, int dir)  ;
 };
 
@@ -190,6 +193,9 @@ struct Boat: public BaseElem::Boat__ {
                     // 送货路上是true/ 取货路上是false
           Berth *aim = nullptr;         // 目标泊点
           Path current_path;            // 待走路径
+
+          int trace_x = 0, trace_y = 0, trace_dir = 0;
+          bool collition = false;
 
           inline void move()  ;
           inline void set_aim(Berth *berth)   {
@@ -311,12 +317,13 @@ namespace BaseElem {
           struct Base {
                     static inline void init()   {
 
-                              grid = (char **)malloc(N * sizeof(char *));
+                              grid = (char **)malloc((N + 10) * sizeof(char *));
                               if (grid == nullptr) {
                                         display(ALLOC::: ERROR.\n);
                               }
+
                               for (int i = 0; i < N; ++i) 
-                                        if ((grid[i] = (char *)malloc(N * sizeof(char))) == NULL) {
+                                        if ((grid[i] = (char *)malloc((N + 10) * sizeof(char))) == NULL) {
                                                   display(ALLOC::: ERROR.\n);
                                         }
 
@@ -339,10 +346,6 @@ namespace BaseElem {
                     static inline void dealloc() {
                               for (int i = 0; i < N; ++i) if (grid[i]) free(grid[i]);
                               if (grid) free(grid);
-
-                              // if (robot_purchase_point) delete<Robot>(robot_purchase_point);
-                              // if (boat_purchase_point) delete(boat_purchase_point);
-                              // if (delivery_point) delete(delivery_point);
                     }
                     
                     static BerthStor berths;
@@ -356,7 +359,6 @@ namespace BaseElem {
 
                     static PurchasePoint<Robot> robot_purchase_point;
                     static PurchasePoint<Boat> boat_purchase_point;
-                    static std::vector<std::pair<int, int>> delivery_point;
           private:
                     static void ProcessMap()  ;
           };
@@ -392,7 +394,8 @@ namespace BaseElem {
                     template <typename... TArgs>
                     explicit PurchasePoint(TArgs... args)/*: PurchasePoint__(std::forward<TArgs>(args)...)*/ {
                               entity_ = PurchasePoint__(std::forward<TArgs>(args)...);
-                              good_in_range.resize(entity_.size(), {0, 0});
+                              entity_.reserve(10);
+                              good_in_range.reserve(10);
                     }
                     
                     // make instance in purchase/ robot or boat
@@ -422,6 +425,15 @@ namespace BaseElem {
 
                                         const auto [xx, yy] = entity_[purchase_id];
                                         printf("lboat %d %d\n", xx, yy);
+
+                                        Boat b;
+                                        b.trace_x = b.x = xx;
+                                        b.trace_y = b.y = yy;
+                                        b.trace_dir = b.dir = RIGHT;
+                                        b.goods_num = 0;
+                                        b.id = Frame::boats->size();
+
+                                        Frame::boats->push_back(b);
                               }
 
                               return true;
@@ -429,9 +441,8 @@ namespace BaseElem {
 
                     template <typename... TArgs>
                     inline void emplace_back(TArgs&... __args)   {
-                              // PurchasePoint__::emplace_back(std::forward<TArgs>(__args)...);
                               entity_.emplace_back(std::forward<TArgs>(__args)...);
-                              good_in_range.resize(entity_.size());
+                              good_in_range.push_back({0, 0});
                     }
                     inline void append_good(const int id, const Good &good) const   {
                               (good_in_range[id].num)++;
@@ -471,20 +482,16 @@ namespace BaseElem {
 
 
           void Base::ProcessMap()   {
+                    display(:: MARK 1\n);
                     for (int i = 0; i < N; ++i) {
                               for (int j = 0; j < N; ++j) {
-                                        if (grid[i][j] == 'R') robot_purchase_point.emplace_back(i, j);
-                                        else if (grid[i][j] == 'S') boat_purchase_point.emplace_back(i, j);
-                                        // else if (grid[i][j] == 'T') delivery_point.emplace_back(i, j);
+                                        if (grid[i][j] == 'R') {
+                                                  robot_purchase_point.emplace_back(i, j);
+                                        }
+                                        else if (grid[i][j] == 'S') {
+                                                  boat_purchase_point.emplace_back(i, j);
+                                        }
                               }
-                    }
-                    display(DEBUG::: robot_purchase_point size %ld.\n, robot_purchase_point.size());
-                    for (auto &[x, y] : robot_purchase_point) {
-                              display(Robot purchase {%d %d}.\n, x, y);
-                    }
-
-                    for (auto &[x, y] : boat_purchase_point) {
-                              display(Boat purchase {%d %d}.\n, x, y);
                     }
           }
 
@@ -503,7 +510,6 @@ namespace BaseElem {
 
           PurchasePoint<Robot> Base::robot_purchase_point = PurchasePoint<Robot>();
           PurchasePoint<Boat> Base::boat_purchase_point = PurchasePoint<Boat>();
-          std::vector<std::pair<int, int>> Base::delivery_point = std::vector<std::pair<int, int>>();
 
           /**
            * Frame部分
@@ -568,7 +574,6 @@ namespace BaseElem {
                     robots->resize(robot_num);     // 确保有足够的位置
                     for (int i = 0; i < Base::robot_num; ++i) {
 
-                              // 机器人信息来的顺序保持为 0 - n ？
                               int id;
                               scanf("%d", &id);
                               // scanf("%d%d%d%d", &robots[i].id, &robots[i].goods_num, &robots[i].x, &robots[i].y);
@@ -593,19 +598,13 @@ namespace BaseElem {
 */
 
 struct MyBase: public BaseElem::Base {
-          // static int ***locks_;
-          static std::vector< std::vector< std::vector<int> > > locks_;
           static std::vector< std::vector<int> > zlocks_;
 
           static inline void init()   {
                     Base::init();
-                    // int [N][N][ROBOT_NUM]
-                    locks_.resize(N, std::vector< std::vector<int> >(N, std::vector<int>(ROBOT_LIMIT, 0)));
                     zlocks_.resize(N,std::vector<int>(N, 0));
           }
 };
-// int ***MyBase::locks_ = NULL;
-std::vector< std::vector< std::vector<int> > > MyBase::locks_ = std::vector< std::vector< std::vector<int> > >();
 std::vector< std::vector<int> > MyBase::zlocks_ = std::vector< std::vector<int> >();
 
 struct MyFrame: public BaseElem::Frame {
@@ -639,7 +638,10 @@ double MyFrame::margin_growth { 0 };
 */
 
 struct Loop {
-          void init() { MyBase::init(), MyFrame::init(); }
+          void init() { 
+                    MyBase::init();
+                    MyFrame::init(); 
+          }
           inline int Run() {
                     if (MyFrame::update() == -1) return -1;
                     puts("OK"); fflush(stdout);
@@ -683,14 +685,18 @@ int MyFrame::update()   {
           // 准备动作/ 机器人动作/ 船最后动
           perfix_action();
           
-          std::vector<std::thread> parallel_tasks(2);
+          /*std::vector<std::thread> parallel_tasks(2);
           parallel_tasks[0] = std::thread(robot_action);
           parallel_tasks[1] = std::thread(boat_action);
-          for (int i = 0; i < 2; ++i) parallel_tasks[i].join();
+          for (int i = 0; i < 2; ++i) parallel_tasks[i].join();*/
 
-          // robot_action();
+          robot_action();
 
-          // boat_action();
+          display(ROBOT ACTION DONW\n);
+
+          boat_action();
+
+          display(BOAT ACTION DONW\n);
                     
           // 购买动作
           purchase_action();
@@ -733,7 +739,7 @@ void MyFrame::purchase_action()   {
 */
 
 // 上是x-1，下是x+1，右是y+1，左是y-1
-Path __trace_back(int const map[N][N], int x, int y)   {
+Path __trace_back(std::vector<std::vector<int>> &map, int x, int y)   {
           Path ret;
           ret.tar_x = x; ret.tar_y = y;
           while (map[x][y] != POINT) {
@@ -747,6 +753,11 @@ Path __trace_back(int const map[N][N], int x, int y)   {
                               default: {
                                         fprintf(stderr, "![important] ::: Unknown direction!\n");
                               }
+                    }
+
+                    if (x < 0 || x >= N || y < 0 || y >= N) {
+                              display(FATLE ERROR::: out of boundary!\n);
+                              
                     }
           }
           // ret.distance = distance;
@@ -785,22 +796,33 @@ inline bool __both_robot_boat_move(char &c)   { return c == 'C' || c == 'c'; }
 inline bool __robot_can_move(char &c)   { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
 
 std::set<int> seen;
+
+
+template<>
+struct std::hash<Position> {
+          std::size_t operator() (Position const &p) const noexcept {
+                    return std::hash<int>{}(std::get<0>(p)) ^ std::hash<int>{}(std::get<1>(p));
+          }
+};
+
 // 寻找路径，默认只找最近的
 const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1)   {
           auto &map_ = MyBase::grid;
           // 加锁的操作转移到__sift_and_lock()中，所以这里设置不可修改locks_
-          const auto &locks_ = MyBase::locks_;
+          // const auto &locks_ = MyBase::locks_;
 
           check_position __check = robot.goods_num ? (__check_berth) : (__check_good);
           check_can_move __can_move = __robot_can_move;
 
-          int trace_[N][N];             
-          int distance_[N][N];          
-          for (int i = 0; i < N; ++i)
+          // int trace_[N][N]; 
+          std::vector<std::vector<int>> trace_(N, std::vector<int>(N, -1));
+          // int distance_[N][N];
+          std::vector<std::vector<int>> distance_(N, std::vector<int>(N, INT_MAX));
+          /*for (int i = 0; i < N; ++i)
           for (int j = 0; j < N; ++j) {
                     trace_[i][j] = -1;
                     distance_[i][j] = INT_MAX;
-          }
+          }*/
 
           trace_[robot.x][robot.y] = POINT;
           distance_[robot.x][robot.y] = 0;
@@ -808,23 +830,29 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1)   {
 
           seen.clear();
           auto ret = std::vector<Path>();
-          auto wait_ = std::set<Position>(); wait_.emplace(robot.x, robot.y);
+
+          auto wait_ = std::unordered_set<Position>(); wait_.emplace(robot.x, robot.y);
 
           CYCLE__: while (wait_.size()) {
-                    std::set<Position> buff_wait;
-                    for (auto &pos : wait_) {
-                              auto [x, y] = pos;
+                    std::unordered_set<Position> buff_wait;
+                    display(:: MARK 5\n);
+
+                    for (auto [x, y] : wait_) {
+                              // auto [x, y] = pos;
+
                               if (__check(x, y) && seen.find(as_key(x, y)) == seen.end()) {
                                         // 可以容忍的距离/ 去泊点无所谓距离/ 去货物只能容忍货物的存在帧
                                         int tolance_ =  robot.goods_num ? -1 : MyFrame::goods[as_key(x, y)].live;
                                         if (tolance_ == -1 || distance_[x][y] <= tolance_) {
                                                   // display(Find target_......\n);
                                                   auto path = __trace_back(trace_ , x, y);
+
                                                   path.type_ = robot.goods_num ? BERTH : GOOD;
                                                   path.tar_price = MyFrame::goods[as_key(x, y)].price;
 
                                                   ret.emplace_back(path);
                                                   seen.emplace(as_key(x, y));
+
                                                   if (ret.size() >= cap) goto RET__;
                                         } else {
                                                   goto RET__;
@@ -854,7 +882,13 @@ const /*std::vector<Path>*/ Path router_dij(Robot &robot, size_t cap = 1)   {
                                         buff_wait.emplace(x, y+1);
                               }
                     }
-                    wait_ = buff_wait;
+
+                    display(:: MARK 6\n);
+
+                    wait_.clear();
+                    wait_ = std::move(buff_wait);
+
+                    display(:: MARK 7\n);
           }
 
           RET__:
@@ -922,7 +956,7 @@ Path __trace_back_boat(std::vector< std::vector< std::vector<int> > > &direction
 
 // args 可以为任何类型参数/ 自定义函数可能需要不同类型的参数
 typedef bool (*check_position_boat) (int x, int y, int dir, void *);
-// 默认方法/ TODO: 
+// 默认方法 
 inline bool __check_position_boat_default(int x, int y, int dir, void *args) {
           // 最简单的就是判断 核心点 到达K点
           return MyBase::grid[x][y] == 'K';
@@ -938,6 +972,162 @@ inline bool __check_position_boat_1 (int x, int y, int dir, void *args) {
           }
           return false;
 }
+
+/**
+ * == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == 
+ * 船的碰撞避免，时间窗方法
+*/
+
+// 时间窗口
+typedef std::array<int, 2> __WINDOW;
+class WINDOW {
+public:
+          WINDOW(): win_{-1, -1} {}
+          // 这个会返回存储内容的复制
+          inline int get_start() { return win_[0]; }
+          inline int get_end() { return win_[1]; }
+          // as_ref方便对内容进行修改
+          inline decltype(auto) get_start_as_ref() { return (win_[0]); };
+          inline decltype(auto) get_end_as_ref() { return (win_[1]); }
+private:
+          __WINDOW win_;
+};
+// vector会在栈内保存基础类型，包括指针，对于开辟的动态内存，调用malloc calloc mmap等方法在堆内申请内存
+// N x N x MAX_BOAT_LIMIT x 2 的锁，BOAT_LIMIT不应该超过MAX_BOAT_LIMIT
+std::vector< std::vector< std::vector<WINDOW> > > blocks_ = 
+          std::vector< std::vector< std::vector<WINDOW> > >(N, std::vector< std::vector<WINDOW> >(N, std::vector<WINDOW>(MAX_BOAT_LIMIT)));
+
+// 输入trace_x和trace_y，根据当前动作与朝向判断下一帧的位置与朝向
+void __next_position_boat(int &x, int &y, int &dir, int action) {
+          switch (action) {
+                    case SHIP: ({
+                              switch (dir) {
+                                        case UP: x -= 1; break;
+                                        case DOWN: x += 1; break;
+                                        case RIGHT: y += 1; break;
+                                        case LEFT: y -= 1; break;
+                              }
+                    }); break;
+                    case CLOCK: ({
+                              switch (dir) {
+                                        case UP: x -= 2; dir = RIGHT; break;
+                                        case DOWN: x += 2; dir = LEFT; break;
+                                        case RIGHT: y += 2; dir = DOWN; break;
+                                        case LEFT: y -= 2; dir = UP; break;
+                              }
+                    }); break;
+
+                    case ANTI: ({
+                              switch (dir) {
+                                        case UP: dir = LEFT; x -= 1; y += 1; break;
+                                        case DOWN: dir = RIGHT; x += 1; y -= 1; break;
+                                        case RIGHT: dir = UP; x += 1; y += 1; break;
+                                        case LEFT: dir = DOWN; x -= 1; y -= 1; break;
+                              }
+                    }); break;
+
+                    default: {
+                              // 这种错误直接导致后面全部乱套
+                              display(![important] ::: Unknown action for boat [%d]\n, action);
+                              return;
+                    }
+          }
+}
+
+// 为船 boat 的路径 path 上锁
+void __trace_lock (Boat &boat, Path &path) {
+          
+          // x y点加锁，时间为t
+          auto lock_point_ = [&](int x, int y, int t) {
+                    if (blocks_[x][y][boat.id].get_start() == -1) {
+                              // 第一次进入记录到达时间
+                              blocks_[x][y][boat.id].get_start_as_ref() = t;
+                    }
+                    // 刷新离开时间
+                    blocks_[x][y][boat.id].get_end_as_ref() = t;
+          };
+
+          // 对船在 x y 方向为 dir 时上锁 t
+          auto lock_position_ = [&](int x, int y, int dir, int t) {
+                    switch(dir) {
+                              case UP:
+                              //  [x y] [x-1 y] [x-2 y] [x y+1] [x-1 y+1] [x-2 y+1]
+                              lock_point_(x, y, t), lock_point_(x-1, y, t), lock_point_(x-2, y, t);
+                              lock_point_(x, y+1, t), lock_point_(x-1, y+1, t), lock_point_(x-2, y+1, t);
+                              break;
+
+                              case DOWN:
+                              // [x y] [x+1 y] [x+2 y] [x y-1] [x+1 y-1] [x+2 y-1]
+                              lock_point_(x, y, t), lock_point_(x+1, y, t), lock_point_(x+2, y, t);
+                              lock_point_(x, y-1, t), lock_point_(x+1, y-1, t), lock_point_(x+2, y-1, t);
+                              break;
+
+                              case LEFT:
+                              // [x y] [x y-1] [x y-2] [x-1 y] [x-1 y-1] [x-1 y-2]
+                              lock_point_(x, y, t), lock_point_(x, y-1, t), lock_point_(x, y-2, t);
+                              lock_point_(x-1, y, t), lock_point_(x-1, y-1, t), lock_point_(x-1, y-2, t);
+                              break;
+
+                              case RIGHT:
+                              // [x y] [x y+1] [x y+2] [x+1 y] [x+1 y+1] [x+1 y+2]
+                              lock_point_(x, y, t), lock_point_(x, y+1, t), lock_point_(x, y+2, t);
+                              lock_point_(x+1, y, t), lock_point_(x+1, y+1, t), lock_point_(x+1, y+2, t);
+                              break;
+
+                              default: {
+                                        display(![important] Unknown direction (lock_position_())\n);
+                              }
+                    }
+          };
+          
+          // 从这里开始加锁，刚开始脚下是0
+          int dir_ = boat.dir;
+          int x_ = boat.x, y_ = boat.y;
+          int time_ = 0;
+          // reverse iterator，反向遍历路径
+          for (auto iter = path.rbegin(); iter != path.rend(); ++iter, ++time_) {
+                    lock_position_(x_, y_, dir_, time_);        // 当前位置加锁
+
+                    // 去到下一个位置
+                    __next_position_boat(x_, y_, dir_, *iter);
+          }
+}
+
+// 在碰撞后dept时清空锁
+void __force_unlock_dept(Boat &boat) {
+
+}
+
+// 船当前状态，在move前调用
+void __forward_unlock(Boat &boat) {
+          auto unlock_ = [&](int x, int y) {
+                    blocks_[x][y][boat.id].get_start_as_ref() = -1;
+                    blocks_[x][y][boat.id].get_end_as_ref() = -1;
+          };
+
+          switch (boat.dir) {
+                    case UP: unlock_(boat.x, boat.y + 1); break;
+                    case RIGHT: unlock_(boat.x + 1, boat.y); break;
+                    case DOWN: unlock_(boat.x, boat.y - 1); break;
+                    case LEFT: unlock_(boat.x - 1, boat.y); break;
+                    default: {
+                              display(![important] Unknown direction (__forward_unlock(boat %d))\n, boat.id);
+                              return;
+                    }
+          }
+          unlock_(boat.x, boat.y);
+}
+
+
+
+
+
+
+
+/**
+ * == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == 
+*/
+
 
 // 船寻路
 const Path 
@@ -979,10 +1169,10 @@ router_boat(
           auto __check_distance_comsume = [&](int x, int y, int dir) {
                     int ret = INT_MAX >> 1;
                     switch (dir) {
-                              case UP: ret = (map_[x - 2][y] == '~' || map_[x - 2][y] == 'c' || map_[x - 2][y + 1] == '~' || map_[x - 2][y + 1] == 'c') ? 2 
+                              case UP: ret = (map_[x - 2][y] == '~' || map_[x - 2][y] == 'c' || map_[x - 2][y + 1] == '~' || map_[x - 2][y + 1] == 'c') ? 2
                                         : 1;
                                         break;
-                              case DOWN: ret = (map_[x + 2][y] == '~' || map_[x + 2][y] == 'c' || map_[x + 2][y - 1] == '~' || map_[x + 2][y - 1] == 'c') ? 2 
+                              case DOWN: ret = (map_[x + 2][y] == '~' || map_[x + 2][y] == 'c' || map_[x + 2][y - 1] == '~' || map_[x + 2][y - 1] == 'c') ? 2
                                         : 1;
                                         break;
                               case LEFT: ret = (map_[x][y - 2] == '~' || map_[x][y - 2] == 'c' || map_[x - 1][y  - 2] == '~' || map_[x - 1][y - 2] == 'c') ? 2 
@@ -1054,6 +1244,20 @@ void perfix_action()   {
                               robot.trace_y = robot.y;
                     }
           }
+
+          for (auto &boat : *MyFrame::boats) {
+                    if (boat.collition) {
+                              boat.trace_x = boat.x;
+                              boat.trace_y = boat.y;
+                              boat.trace_dir = boat.dir;
+                              boat.collition = false;       // 恢复状态，下面调用boat_action就可以行动了
+
+                    } else if (boat.x != boat.trace_x || boat.y != boat.trace_y || boat.dir != boat.trace_dir) {
+                              display(COLLI::: boat collition is true[%d]\n, boat.id);
+                              boat.collition = true;        // 交给boat_action，boat_action后下一帧回到这里
+                                        // 进行上面if内的动作
+                    } // collition为false并且trace正确，没有发生碰撞
+          }
 }
 // std::vector<Robot *> after_move;
 // 机器人的操作/ 为每个机器人寻路/ 每个机器人移动或拿起放下货物/ [TODO: 需要修改为多线程并发操作 X]
@@ -1061,11 +1265,22 @@ std::vector<std::thread> tasks_;
 void robot_action()   {
           for (auto &robot : *MyFrame::robots) {
                     
+                    display(MARK 1\n);
+
                     if (robot.collision) robot.current_path.clear(), robot.stack_.clear(), robot.collision = false;  // 碰撞之后重新寻路
+
+
+                    display(MARK 2\n);
+
 
                     // 机器人寻路，一帧中最多找ROUTER_LIMIT_PER_FRAME次路
                     if (robot.current_path.empty() && MyFrame::router_times < ROUTER_LIMIT_PER_FRAME) {
+
+                              display(MARK 2.1\n);
                               auto router = robot.goods_num ? router_dij(robot) : router_dij(robot, CMP_TARGET_NUM);
+
+                              display(MARK 2.2\n);
+
                               MyFrame::router_times++;      // 找路次数加一
                               if (router.empty()) {
                                         // 冗余 拿/放 操作
@@ -1074,7 +1289,10 @@ void robot_action()   {
                                                   MyFrame::goods.erase(as_key(robot.x, robot.y));
                                         } else robot.pull();
                                         continue;
+                              
                               }
+
+                              display(MARK 2.3\n);
 
                               // 目前就一条路径
                               robot.current_path = std::move(router);
@@ -1082,8 +1300,12 @@ void robot_action()   {
                                         int key = as_key(robot.current_path.tar_x, robot.current_path.tar_y);
                                         MyFrame::goods.erase(key);
                               }
+
+                              display(MARK 2.4\n);
                               
                     }
+
+                    display(MARK 3\n);
 
 
                     if (robot.current_path.empty()) continue;
@@ -1139,6 +1361,13 @@ void display_path(const Path &path) {
 // 船的操作/ 分配泊点/ 装卸货物
 void boat_action()   {
           for (auto &boat : *MyFrame::boats) {
+                    if (boat.collition) {
+                              boat.dept();                  // 闪现到最近的主航道
+                              boat.current_path.clear();    // 忘记旧路径
+                              __force_unlock_dept(boat);    // 清空旧路径的锁
+                              continue;
+                    }
+
                     if (boat.status == 0) { // 正常状态 
                               // 路径为空，代表 空闲
                               if (boat.current_path.empty()) {
@@ -1183,13 +1412,6 @@ void boat_action()   {
                                         boat.dept();        // 看看能去哪
                                         boat.release_aim();
                                         boat.current_path.clear();
-                                        // 送货
-                                        // display(BOAT::: from[%d %d]\n, boat.x, boat.y);
-                                        // boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
-                                        // display(BOAT::: to T[%d %d]\n, boat.current_path.tar_x, boat.current_path.tar_y);
-                                        // display_path(boat.current_path);
-
-                                        // boat.move();
                               }
                     }
           }
@@ -1209,7 +1431,12 @@ void Robot::get()   {
           Robot__::get();
           
           current_price = current_path.size() ? current_path.tar_price : (
-                    MyFrame::goods.find_(x, y) ? MyFrame::goods[as_key(x, y)].price : 0
+                    MyFrame::goods.find_(x, y) ? 
+                              ({
+                                        auto &good = MyFrame::goods[as_key(x, y)];
+                                        MyBase::robot_purchase_point.remove_good(good.purchase_rank, good);
+                                        good.price;
+                              }) : 0
           );
 
           total_price_ += current_price;
@@ -1336,7 +1563,14 @@ void Boat::move()   {
 
           auto &path = current_path;
           if (!path.done()) {
+                    // 过去的路径解锁
+                    __forward_unlock(*this);
+
                     int dir_ = path.get_direction();
+                    // 追踪下一步应该处于的状态
+                    __next_position_boat(trace_x, trace_y, trace_dir, dir_);
+
+                    // 移动，下一帧更新的x y dir正常的话应该等于trace_[x y dir]
                     if (dir_ == SHIP) ship();
                     else rot(dir_);
           } else {
