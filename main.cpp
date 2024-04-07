@@ -1142,27 +1142,29 @@ void boat_action()   {
                                         auto tar_berth = __alloc_berth_for_boat(boat);
                                         if (tar_berth == nullptr) { continue; }
 
-                                        display(ROUTER:: To berth %d [num %d]...\n, tar_berth->id, tar_berth->crt_num);
-                                        boat.current_path = router_boat(boat, __check_position_boat_1, tar_berth);  // 寻找一个最近的泊点
-                                        display(ROUTER:: boat router tarx %d tary %d\n, boat.current_path.tar_x, boat.current_path.tar_y);
+                                        if (!boat.can_leave) {
+                                                  display(ROUTER:: To berth %d [num %d]...\n, tar_berth->id, tar_berth->crt_num);
+                                                  boat.current_path = router_boat(boat, __check_position_boat_1, tar_berth);  // 寻找一个最近的泊点
+                                                  display(ROUTER:: boat router tarx %d tary %d\n, boat.current_path.tar_x, boat.current_path.tar_y);
 
-                                        auto ret = MyBase::berths.end();
-                                        // 找到占用的泊位，然后占用泊位
-                                        if (boat.current_path.empty()) {        // 当前位置？寻路可能有些问题？
-                                                  display(::: Empty Boat Path\n);
-                                                  ret = MyBase::berths.iter_find(boat.x, boat.y, [](int x, int y, Berth &berth) {
-                                                            return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
-                                                  });
-                                        } else { // 设置占用泊位
-                                                  ret = MyBase::berths.iter_find(boat.current_path.tar_x, boat.current_path.tar_y, [](int x, int y, Berth &berth) {
-                                                            return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
-                                                  });
-                                        }
+                                                  auto ret = MyBase::berths.end();
+                                                  // 找到占用的泊位，然后占用泊位
+                                                  if (boat.current_path.empty()) {        // 当前位置？寻路可能有些问题？
+                                                            display(::: Empty Boat Path\n);
+                                                            ret = MyBase::berths.iter_find(boat.x, boat.y, [](int x, int y, Berth &berth) {
+                                                                      return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
+                                                            });
+                                                  } else { // 设置占用泊位
+                                                            ret = MyBase::berths.iter_find(boat.current_path.tar_x, boat.current_path.tar_y, [](int x, int y, Berth &berth) {
+                                                                      return std::abs(x - berth.x) < 9 && std::abs(y - berth.y) < 9;
+                                                            });
+                                                  }
 
-                                        // 找到一个泊点
-                                        if (ret != MyBase::berths.end()) {
-                                                  boat.set_aim(&(*ret)); // 设置状态/ TODO::: 在装载状态结束时恢复这些状态位
-                                        }
+                                                  // 找到一个泊点
+                                                  if (ret != MyBase::berths.end()) {
+                                                            boat.set_aim(&(*ret)); // 设置状态/ TODO::: 在装载状态结束时恢复这些状态位
+                                                  }
+                                        } else boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
                               }
                               boat.move();
 
@@ -1177,11 +1179,14 @@ void boat_action()   {
                               if (boat.can_leave) {
                                         boat.dept();        // 看看能去哪
                                         boat.release_aim();
+                                        boat.current_path.clear();
                                         // 送货
-                                        display(BOAT::: from[%d %d]\n, boat.x, boat.y);
-                                        boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
-                                        display(BOAT::: to T[%d %d]\n, boat.current_path.tar_x, boat.current_path.tar_y);
-                                        display_path(boat.current_path);
+                                        // display(BOAT::: from[%d %d]\n, boat.x, boat.y);
+                                        // boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
+                                        // display(BOAT::: to T[%d %d]\n, boat.current_path.tar_x, boat.current_path.tar_y);
+                                        // display_path(boat.current_path);
+
+                                        // boat.move();
                               }
                     }
           }
