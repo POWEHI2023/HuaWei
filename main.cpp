@@ -336,7 +336,7 @@ namespace BaseElem {
                               
                               CHECK_OK(); printf("OK\n"); fflush(stdout);
                     }
-                    static inline void dealloc()   {
+                    static inline void dealloc() {
                               for (int i = 0; i < N; ++i) if (grid[i]) free(grid[i]);
                               if (grid) free(grid);
 
@@ -344,7 +344,7 @@ namespace BaseElem {
                               // if (boat_purchase_point) delete(boat_purchase_point);
                               // if (delivery_point) delete(delivery_point);
                     }
-
+                    
                     static BerthStor berths;
                     static int boat_capacity;
                     static char **grid;
@@ -645,7 +645,10 @@ struct Loop {
                     puts("OK"); fflush(stdout);
                     return 0;
           }
-          void free() { MyBase::dealloc(); }
+          void free() { 
+                    MyBase::dealloc(); 
+                    MyFrame::dealloc();
+          }
 
           Loop() { init(); }
           ~Loop() { display(LOOP EXECUTE OVER!\n); free(); }
