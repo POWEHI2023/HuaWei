@@ -753,7 +753,7 @@ inline bool __check_good(int x, int y)   { return MyFrame::goods.find_(x, y); }
 
 typedef bool (*check_can_move) (char &);
 inline bool __both_robot_boat_move(char &c)   { return c == 'C' || c == 'c'; }
-inline bool __robot_can_move(char &c)   { return c == '.' || c == '>' || c == 'R' || c == 'B' || __both_robot_boat_move(c); }
+inline bool __robot_can_move(char &c)   { return c == '.' || c == '>' || /*c == 'R' ||*/ c == 'B' || __both_robot_boat_move(c); }
 
 std::set<int> seen;
 
@@ -1161,8 +1161,8 @@ router_boat(
           /**
            * 初始化
           */
-          std::vector< std::vector< std::vector<int> > > direction_(N, std::vector(N, std::vector(4, -1)));
-          std::vector< std::vector< std::vector<int> > > distance_(N, std::vector(N, std::vector(4, INT_MAX)));
+          std::vector< std::vector< std::vector<int> > > direction_(N, std::vector(N, std::vector<int>(4, -1)));
+          std::vector< std::vector< std::vector<int> > > distance_(N, std::vector(N, std::vector<int>(4, INT_MAX)));
           std::vector< std::vector<int> > timer_(N, std::vector<int>(N));
 
           direction_[boat.x][boat.y][boat.dir] = POINT;
@@ -1534,7 +1534,7 @@ void Robot::pull() const   {
 }
 
 inline void __force_lock(int x, int y)   {
-          if (MyBase::grid[x][y] == 'c') {
+          if (MyBase::grid[x][y] == 'c' || MyBase::grid[x][y] == '>') {
                     auto &map_ = MyBase::grid;
                     bool tag = false;
                     if (!tag && x - 1 >= 0 && map_[x-1][y] == '.') tag = true;
