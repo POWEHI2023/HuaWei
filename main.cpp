@@ -37,9 +37,9 @@
 #define BOAT_PRICE 8000
 #define ROBOT_PRICE 2000
 
-#define MAX_BOAT_LIMIT 10     // BOAT_LIMIT不应该超过MAX_BOAT_LIMIT
+#define MAX_BOAT_LIMIT 13     // BOAT_LIMIT不应该超过MAX_BOAT_LIMIT
 
-#define ROBOT_LIMIT 15        // 设置一个最大量
+#define ROBOT_LIMIT 10        // 设置一个最大量
 #define BOAT_LIMIT 1         // 设置一个最大量
 
 #define INIT_ROBOT_NUM 2      // 初始买几个机器人
@@ -173,6 +173,8 @@ struct Boat: public BaseElem::Boat__ {
                     // 送货路上是true/ 取货路上是false
           Berth *aim = nullptr;         // 目标泊点
           Path current_path;            // 待走路径
+
+          int gap_num = 0;
 
           int trace_x = 0, trace_y = 0, trace_dir = 0;
           bool collition = false;
@@ -738,7 +740,7 @@ inline Path __sift_and_lock(std::vector<Path> &path)   {
           int ret_ = 0;
           for (int i = 1; i < path.size(); ++i) {
                     auto &p = path[i];
-                    double score = (double)p.tar_price / (double)p.get_distance();
+                    double score = (double)p.tar_price; // / (double)p.get_distance();
                     if (score > score_) {
                               ret_ = i;
                               score_ = score;
@@ -1161,8 +1163,8 @@ router_boat(
           /**
            * 初始化
           */
-          std::vector< std::vector< std::vector<int> > > direction_(N, std::vector(N, std::vector<int>(4, -1)));
-          std::vector< std::vector< std::vector<int> > > distance_(N, std::vector(N, std::vector<int>(4, INT_MAX)));
+          std::vector< std::vector< std::vector<int> > > direction_(N, std::vector<std::vector<int>>(N, std::vector<int>(4, -1)));
+          std::vector< std::vector< std::vector<int> > > distance_(N, std::vector<std::vector<int>>(N, std::vector<int>(4, INT_MAX)));
           std::vector< std::vector<int> > timer_(N, std::vector<int>(N));
 
           direction_[boat.x][boat.y][boat.dir] = POINT;
@@ -1172,30 +1174,12 @@ router_boat(
 
           // 检查船在 x y 处方向 dir 能否存在/ 判读锁
           // t是进入时间，dt是持续时间，如果碰到了主航道dt就是1
-          auto __check_can_move = [&](int x, int y, int dir, int t = 0, int dt = 5) {
+          auto __check_can_move = [&](int x, int y, int dir) {
                     // 单点查询
                     auto __pos_valid = [&](int x, int y) {
                               // 检查越界
                               if (!(x >= 0 && x < N && y >= 0 && y < N)) return false;
-                              bool ret = map_[x][y] == '*' || map_[x][y] == '~' || map_[x][y] == 'K' || map_[x][y] == 'C' || map_[x][y] == 'c' || map_[x][y] == 'T';
-                              // 检查其他船的时间区间，看看是不是路径冲突
-                              /*for (int i = 0; ret && i < MyFrame::boats.size(); ++i) {
-                                        if (i == boat.id) continue;
-
-                                        int zone_start = blocks_[x][y][i].get_start(), zone_end = blocks_[x][y][i].get_end();
-                                        int ref = -1;
-                                        if (MyFrame::boats[i].current_path.size()) {
-                                                  ref = MyFrame::boats[i].current_path.size() - MyFrame::boats[i].current_path.get_distance();
-                                        }
-                                        if (ref == -1) continue;
-
-                                        ret &= zone_start == -1 || (
-                                                  // 不在其他船的占用区间内
-                                                  // Inf... t... zone_end ... zone_start ...t ...0
-                                                  zone_start - ref > t + dt || zone_end - ref < t
-                                        );
-                              }*/
-                              return ret;
+                              return map_[x][y] == '*' || map_[x][y] == '~' || map_[x][y] == 'K' || map_[x][y] == 'C' || map_[x][y] == 'c' || map_[x][y] == 'T';
                     };
 
                     // 对于x y dir的范围查询
@@ -1228,6 +1212,33 @@ router_boat(
                                         break;
                     }
                     return ret;
+          };
+
+          // 待五秒
+          auto __check_lock = [&](int x, int y, int dir, int time, int dt = 5) {
+                    auto __pos_lock = [&](int x, int y) {
+                              for (auto &boat_ : MyFrame::boats) {
+                                        if (blocks_[x][y][boat_.id].get_start() == -1) continue;
+
+                                        int ref = boat_.current_path.size();
+                                        ref = ref ? ref - boat_.current_path.get_distance() : -1;
+                                        if (ref == -1) continue;
+
+                                        // [time, time + dt] [start, end]
+                                        if (time + dt > blocks_[x][y][boat_.id].get_start() - ref || time < blocks_[x][y][boat_.id].get_end() - ref) {
+                                                  return false;
+                                        }
+                              }
+                              return true;
+                    };
+
+                    switch (dir) {
+                              case UP: return __pos_lock(x - 2, y) && __pos_lock(x - 2, y + 1);
+                              case DOWN: return __pos_lock(x + 2, y) && __pos_lock(x + 2, y - 1);
+                              case LEFT: return __pos_lock(x, y - 2) && __pos_lock(x - 1, y - 2);
+                              case RIGHT: return __pos_lock(x, y + 2) && __pos_lock(x + 1, y + 2);
+                    }
+                    return false;
           };
 
           // position, direction
@@ -1263,8 +1274,12 @@ router_boat(
 
                                         // 越界或者离开航道，不能走，在航道中并且遇到主航道，判断持续时间+1的区间是否碰撞，主要是判断船不在主航道内的部分
                                         if (!__check_can_move(xx, yy, ddir_)) continue;
+                                        // check_can_move为true，现在判断时间窗是否可以和其他船冲突
+                                        if (!__check_lock(xx, yy, ddir_, timer_[x][y] + 1)) continue;
 
                                         int consume_ = __check_distance_comsume(xx, yy, ddir_);
+
+                                        timer_[xx][yy] = timer_[x][y] + consume_;
 
                                         int dis_ = distance_[x][y][dir] + consume_;
                                         if (dis_ < distance_[xx][yy][ddir_]) {
@@ -1363,7 +1378,7 @@ void robot_action()   {
 }
 
 Berth *__alloc_berth_for_boat(Boat &boat)   {
-          int score = -1;
+          int score = 0;
           Berth *ret = nullptr;
           for (auto &berth : MyBase::berths) {
                     if (berth.free_ == false) continue;
@@ -1393,6 +1408,7 @@ void display_path(const Path &path) {
           display(\n);
 }
 // 船的操作/ 分配泊点/ 装卸货物
+bool just_one = false;
 void boat_action()   {
           display(::: Boat action...\n);
 
@@ -1444,7 +1460,7 @@ void boat_action()   {
                                                   }
                                         } else {
                                                   display(::: Finding path to transport...\n);
-
+                                                  boat.gap_num = 0;
                                                   boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
                                         }
 
@@ -1457,15 +1473,30 @@ void boat_action()   {
                     } else if (boat.status == 1) {          // 恢复状态
                               
                     } else {  // 装载状态
-                              if  (boat.aim->crt_num <= boat.goods_num || boat.goods_num >= MyBase::boat_capacity) {
+
+                              if (15000 - MyFrame::id <= 300 && !just_one) {
                                         boat.can_leave = true;
-                                        boat.aim->crt_num = std::max(boat.aim->crt_num - boat.goods_num, 0);
-                              }
-                              
-                              if (boat.can_leave) {
-                                        boat.dept();        // 看看能去哪
+                                        boat.dept();
                                         boat.release_aim();
                                         boat.current_path.clear();
+
+                                        just_one = true;
+                              } else {
+                                        if  (boat.aim->crt_num <= boat.goods_num - boat.gap_num || boat.goods_num >= MyBase::boat_capacity) {
+                                                  boat.can_leave = true;
+                                                  boat.aim->crt_num = std::max(boat.aim->crt_num - boat.goods_num + boat.gap_num, 0);
+                                        }
+                                        
+                                        if (boat.can_leave) {
+                                                  boat.dept();        // 看看能去哪
+                                                  boat.release_aim();
+                                                  boat.current_path.clear();
+
+                                                  if (boat.goods_num < MyBase::boat_capacity - 10) {
+                                                            boat.can_leave = false;
+                                                            boat.gap_num = boat.goods_num;
+                                                  }
+                                        }
                               }
                     }
           }
@@ -1509,7 +1540,7 @@ void Robot::pull() const   {
                               MyFrame::clock_for_margin_func = MyBase::robot_num;
                     else {
                               MyFrame::need_robot++;
-                              if (((MyFrame::need_boat + MyFrame::robots.size()) >> 1) > (MyFrame::need_boat + MyFrame::boats.size())) 
+                              if (((MyFrame::need_boat + MyFrame::robots.size()) >> 2) > (MyFrame::need_boat + MyFrame::boats.size())) 
                                         MyFrame::need_boat++;         // 船的数量为机器人的一半/ 为2的时候是1/4/ 为3的时候是1/8
                               MyFrame::clock_for_margin_func = MyBase::robot_num + 1;     // 刷新间隔增加
                     }
