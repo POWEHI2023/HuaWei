@@ -1,14 +1,10 @@
 
 /**
- * 需要解决的问题
+ * 并发点:
  * 
- * 1. 制定泊点的路径/ 送货点的路径
- * 2. 船路径加锁/ 
- * 3. 并发
- * 4. 控制船和机器人的数量
+ * 机器人可以并行寻路，串行移动
  * 
- * 正在实现的东西
- * 
+ * 船可以串行寻路，并行移动
  * 
 */
 #pragma warning(disable:4996)
@@ -88,6 +84,8 @@ public:
           inline int get_distance() const   { return cursor + 1; }
           inline bool done() const   { return cursor < 0; }
           inline int get_direction()   { return done() ? POINT : (*this)[cursor--]; }
+
+          inline void back_step() { cursor++; }
 
           int tar_x, tar_y;
           TraceType type_;
@@ -651,14 +649,14 @@ int MyFrame::update()   {
           // 准备动作/ 机器人动作/ 船最后动
           perfix_action();
           
-          std::vector<std::thread> parallel_tasks(2);
+          /*std::vector<std::thread> parallel_tasks(2);
           parallel_tasks[0] = std::thread(robot_action);
           parallel_tasks[1] = std::thread(boat_action);
-          for (int i = 0; i < 2; ++i) parallel_tasks[i].join();
+          for (int i = 0; i < 2; ++i) parallel_tasks[i].join();*/
 
-          // robot_action();
+          robot_action();
 
-          // boat_action();
+          boat_action();
                     
           // 购买动作
           purchase_action();
@@ -988,45 +986,47 @@ void __trace_lock (Boat &boat, Path &path) {
           
           // x y点加锁，时间为t
           auto lock_point_ = [&](int x, int y, int t) {
+                    // 主航道不加锁
+                    if (MyBase::grid[x][y] == 'K' || MyBase::grid[x][y] == '~' || MyBase::grid[x][y] == 'c') return true;
+
                     if (blocks_[x][y][boat.id].get_start() == -1) {
                               // 第一次进入记录到达时间
                               blocks_[x][y][boat.id].get_start_as_ref() = t;
                     }
                     // 刷新离开时间
                     blocks_[x][y][boat.id].get_end_as_ref() = t;
+
+                    return false;
           };
 
           // 对船在 x y 方向为 dir 时上锁 t
-          auto lock_position_ = [&](int x, int y, int dir, int t) {
+          auto lock_position_ = [&](int x, int y, int dir, int t) -> bool {
                     switch(dir) {
                               case UP:
                               //  [x y] [x-1 y] [x-2 y] [x y+1] [x-1 y+1] [x-2 y+1]
-                              lock_point_(x, y, t), lock_point_(x-1, y, t), lock_point_(x-2, y, t);
-                              lock_point_(x, y+1, t), lock_point_(x-1, y+1, t), lock_point_(x-2, y+1, t);
-                              break;
+                              return lock_point_(x, y, t) | lock_point_(x-1, y, t) | lock_point_(x-2, y, t) |
+                              lock_point_(x, y+1, t) | lock_point_(x-1, y+1, t) | lock_point_(x-2, y+1, t);
 
                               case DOWN:
                               // [x y] [x+1 y] [x+2 y] [x y-1] [x+1 y-1] [x+2 y-1]
-                              lock_point_(x, y, t), lock_point_(x+1, y, t), lock_point_(x+2, y, t);
-                              lock_point_(x, y-1, t), lock_point_(x+1, y-1, t), lock_point_(x+2, y-1, t);
-                              break;
+                              return lock_point_(x, y, t) | lock_point_(x+1, y, t) | lock_point_(x+2, y, t) |
+                              lock_point_(x, y-1, t) | lock_point_(x+1, y-1, t) | lock_point_(x+2, y-1, t);
 
                               case LEFT:
                               // [x y] [x y-1] [x y-2] [x-1 y] [x-1 y-1] [x-1 y-2]
-                              lock_point_(x, y, t), lock_point_(x, y-1, t), lock_point_(x, y-2, t);
-                              lock_point_(x-1, y, t), lock_point_(x-1, y-1, t), lock_point_(x-1, y-2, t);
-                              break;
+                              return lock_point_(x, y, t) | lock_point_(x, y-1, t) | lock_point_(x, y-2, t) |
+                              lock_point_(x-1, y, t) | lock_point_(x-1, y-1, t) | lock_point_(x-1, y-2, t);
 
                               case RIGHT:
                               // [x y] [x y+1] [x y+2] [x+1 y] [x+1 y+1] [x+1 y+2]
-                              lock_point_(x, y, t), lock_point_(x, y+1, t), lock_point_(x, y+2, t);
-                              lock_point_(x+1, y, t), lock_point_(x+1, y+1, t), lock_point_(x+1, y+2, t);
-                              break;
+                              return lock_point_(x, y, t) | lock_point_(x, y+1, t) | lock_point_(x, y+2, t) |
+                              lock_point_(x+1, y, t) | lock_point_(x+1, y+1, t) | lock_point_(x+1, y+2, t);
 
                               default: {
                                         display(![important] Unknown direction (lock_position_())\n);
                               }
                     }
+                    return false;
           };
           
           // 从这里开始加锁，刚开始脚下是0
@@ -1035,8 +1035,8 @@ void __trace_lock (Boat &boat, Path &path) {
           int time_ = 0;
           // reverse iterator，反向遍历路径
           for (auto iter = path.rbegin(); iter != path.rend(); ++iter, ++time_) {
-                    lock_position_(x_, y_, dir_, time_);        // 当前位置加锁
-
+                    if (lock_position_(x_, y_, dir_, time_))        // 当前位置加锁
+                              lock_position_(x_, y_, dir_, ++time_);  // 当遇到主航道会停留一帧，所以再加一个 时间+1 的锁
                     // 去到下一个位置
                     __next_position_boat(x_, y_, dir_, *iter);
           }
@@ -1044,7 +1044,72 @@ void __trace_lock (Boat &boat, Path &path) {
 
 // 在碰撞后dept时清空锁
 void __force_unlock_dept(Boat &boat) {
+          boat.current_path.back_step();
 
+          auto unlock_point_ = [&](int x, int y) {
+                    blocks_[x][y][boat.id].get_start_as_ref() = -1;
+                    blocks_[x][y][boat.id].get_end_as_ref() = -1;
+          };
+          auto unlock_position_ = [&](int x, int y, int dir) {
+                    switch(dir) {
+                              case UP:
+                              unlock_point_(x-2, y), unlock_point_(x-2, y+1);
+                              break;
+
+                              case DOWN:
+                              unlock_point_(x+2, y), unlock_point_(x+2, y-1);
+                              break;
+
+                              case LEFT:
+                              unlock_point_(x, y-2), unlock_point_(x-1, y-2);
+                              break;
+
+                              case RIGHT:
+                              unlock_point_(x, y+2), unlock_point_(x+1, y+2);
+                              break;
+
+                              default: {
+                                        display(![important] Unknown direction (unlock_position_())\n);
+                              }
+                    }
+          };
+
+          int x = boat.x, y = boat.y, dir = boat.dir;
+          switch(dir) {
+                    case UP:
+                    //  [x y] [x-1 y] [x-2 y] [x y+1] [x-1 y+1] [x-2 y+1]
+                    unlock_point_(x, y), unlock_point_(x-1, y), unlock_point_(x-2, y);
+                    unlock_point_(x, y+1), unlock_point_(x-1, y+1), unlock_point_(x-2, y+1);
+                    break;
+
+                    case DOWN:
+                    // [x y] [x+1 y] [x+2 y] [x y-1] [x+1 y-1] [x+2 y-1]
+                    unlock_point_(x, y), unlock_point_(x+1, y), unlock_point_(x+2, y);
+                    unlock_point_(x, y-1), unlock_point_(x+1, y-1), unlock_point_(x+2, y-1);
+                    break;
+
+                    case LEFT:
+                    // [x y] [x y-1] [x y-2] [x-1 y] [x-1 y-1] [x-1 y-2]
+                    unlock_point_(x, y), unlock_point_(x, y-1), unlock_point_(x, y-2);
+                    unlock_point_(x-1, y), unlock_point_(x-1, y-1), unlock_point_(x-1, y-2);
+                    break;
+
+                    case RIGHT:
+                    // [x y] [x y+1] [x y+2] [x+1 y] [x+1 y+1] [x+1 y+2]
+                    unlock_point_(x, y), unlock_point_(x, y+1), unlock_point_(x, y+2);
+                    unlock_point_(x+1, y), unlock_point_(x+1, y+1), unlock_point_(x+1, y+2);
+                    break;
+
+                    default: {
+                              display(![important] Unknown direction\n);
+                    }
+          }
+
+          while (!boat.current_path.done()) {
+                    unlock_position_(x, y, dir);  // 当前位置解锁
+                    // 下一个地方
+                    __next_position_boat(x, y, dir, boat.current_path.get_direction());
+          }
 }
 
 // 船当前状态，在move前调用
@@ -1067,7 +1132,10 @@ void __forward_unlock(Boat &boat) {
           unlock_(boat.x, boat.y);
 }
 
+// 离开去一个没有被其他船占用的地方
+void router_boat_space() {
 
+}
 
 
 
@@ -1095,17 +1163,42 @@ router_boat(
           */
           std::vector< std::vector< std::vector<int> > > direction_(N, std::vector(N, std::vector(4, -1)));
           std::vector< std::vector< std::vector<int> > > distance_(N, std::vector(N, std::vector(4, INT_MAX)));
+          std::vector< std::vector<int> > timer_(N, std::vector<int>(N));
 
           direction_[boat.x][boat.y][boat.dir] = POINT;
           distance_[boat.x][boat.y][boat.dir] = 0;
 
+          display(::: Init over...\n);
+
           // 检查船在 x y 处方向 dir 能否存在/ 判读锁
-          auto __check_can_move = [&](int x, int y, int dir) {
+          // t是进入时间，dt是持续时间，如果碰到了主航道dt就是1
+          auto __check_can_move = [&](int x, int y, int dir, int t = 0, int dt = 5) {
+                    // 单点查询
                     auto __pos_valid = [&](int x, int y) {
                               // 检查越界
                               if (!(x >= 0 && x < N && y >= 0 && y < N)) return false;
-                              return map_[x][y] == '*' || map_[x][y] == '~' || map_[x][y] == 'K' || map_[x][y] == 'C' || map_[x][y] == 'c' || map_[x][y] == 'T';
+                              bool ret = map_[x][y] == '*' || map_[x][y] == '~' || map_[x][y] == 'K' || map_[x][y] == 'C' || map_[x][y] == 'c' || map_[x][y] == 'T';
+                              // 检查其他船的时间区间，看看是不是路径冲突
+                              /*for (int i = 0; ret && i < MyFrame::boats.size(); ++i) {
+                                        if (i == boat.id) continue;
+
+                                        int zone_start = blocks_[x][y][i].get_start(), zone_end = blocks_[x][y][i].get_end();
+                                        int ref = -1;
+                                        if (MyFrame::boats[i].current_path.size()) {
+                                                  ref = MyFrame::boats[i].current_path.size() - MyFrame::boats[i].current_path.get_distance();
+                                        }
+                                        if (ref == -1) continue;
+
+                                        ret &= zone_start == -1 || (
+                                                  // 不在其他船的占用区间内
+                                                  // Inf... t... zone_end ... zone_start ...t ...0
+                                                  zone_start - ref > t + dt || zone_end - ref < t
+                                        );
+                              }*/
+                              return ret;
                     };
+
+                    // 对于x y dir的范围查询
                     switch (dir) {
                               case UP: return __pos_valid(x - 2, y) && __pos_valid(x - 2, y + 1);
                               case DOWN: return __pos_valid(x + 2, y) && __pos_valid(x + 2, y - 1);
@@ -1114,8 +1207,11 @@ router_boat(
                     }
                     return false;
           };
-          // 检查这个位置是否碰到了主航道 主航道 dis 2，普通航道 dis 1
+          // 检查这个位置是否碰到了主航道 主航道 dis 2，普通航道 dis 1/ +越界检查
           auto __check_distance_comsume = [&](int x, int y, int dir) {
+                    // 这个不能走的, can move会返回false
+                    // if (x < 0 || x >= N || y < 0 || y >= N) return 1;
+
                     int ret = INT_MAX >> 1;
                     switch (dir) {
                               case UP: ret = (map_[x - 2][y] == 'K' || map_[x - 2][y] == '~' || map_[x - 2][y] == 'c' || map_[x - 2][y + 1] == '~' || map_[x - 2][y + 1] == 'c') ? 2
@@ -1138,6 +1234,8 @@ router_boat(
           std::set<std::tuple<int, int, int>> wait_;
           wait_.emplace(boat.x, boat.y, boat.dir);
 
+
+          display(::: Into loop...\n);
           /**
            * 寻路的主体部分
           */
@@ -1162,9 +1260,13 @@ router_boat(
                               // 对于三种转换/ dx dy是变化量，ddir_是变化后的朝向
                               for (auto &[dx, dy, ddir_] : to_next_) {
                                         int xx = x + dx, yy = y + dy; // 变化后的 核心点 位置
+
+                                        // 越界或者离开航道，不能走，在航道中并且遇到主航道，判断持续时间+1的区间是否碰撞，主要是判断船不在主航道内的部分
                                         if (!__check_can_move(xx, yy, ddir_)) continue;
 
-                                        int dis_ = distance_[x][y][dir] + __check_distance_comsume(xx, yy, ddir_);
+                                        int consume_ = __check_distance_comsume(xx, yy, ddir_);
+
+                                        int dis_ = distance_[x][y][dir] + consume_;
                                         if (dis_ < distance_[xx][yy][ddir_]) {
                                                   distance_[xx][yy][ddir_] = dis_;
                                                   direction_[xx][yy][ddir_] = dir;        // 记录来源状态，可能由三种状态转换而来
@@ -1266,9 +1368,10 @@ Berth *__alloc_berth_for_boat(Boat &boat)   {
           for (auto &berth : MyBase::berths) {
                     if (berth.free_ == false) continue;
                     int score_ = berth.crt_num;
-                    display(SCORE::: berth %d has crt_num %d\n, berth.id, berth.crt_num);
+
                     if (score_ > score) score = score_, ret = &berth;
           }
+          display(::: Check a berth to boat\n);
           return ret;
 }
 
@@ -1291,21 +1394,33 @@ void display_path(const Path &path) {
 }
 // 船的操作/ 分配泊点/ 装卸货物
 void boat_action()   {
+          display(::: Boat action...\n);
+
           for (auto &boat : MyFrame::boats) {
                     if (boat.collition) {
+                              __force_unlock_dept(boat);    // 清空旧路径的锁
                               boat.dept();                  // 闪现到最近的主航道
                               boat.current_path.clear();    // 忘记旧路径
-                              __force_unlock_dept(boat);    // 清空旧路径的锁
                               continue;
                     }
+
+                    display(::: Check status...\n);
 
                     if (boat.status == 0) { // 正常状态 
                               // 路径为空，代表 空闲
                               if (boat.current_path.empty()) {
-                                        auto tar_berth = __alloc_berth_for_boat(boat);
-                                        if (tar_berth == nullptr) { continue; }
+
+                                        display(::: Finding path...\n);
 
                                         if (!boat.can_leave) {
+
+                                                  display(::: Finding path to berth...\n);
+
+                                                  auto tar_berth = __alloc_berth_for_boat(boat);
+                                                  if (tar_berth == nullptr) { continue; }
+
+                                                  display(::: Check a berth to boat OUTER\n);
+
                                                   display(ROUTER:: To berth %d [num %d]...\n, tar_berth->id, tar_berth->crt_num);
                                                   boat.current_path = router_boat(boat, __check_position_boat_1, tar_berth);  // 寻找一个最近的泊点
                                                   display(ROUTER:: boat router tarx %d tary %d\n, boat.current_path.tar_x, boat.current_path.tar_y);
@@ -1327,7 +1442,15 @@ void boat_action()   {
                                                   if (ret != MyBase::berths.end()) {
                                                             boat.set_aim(&(*ret)); // 设置状态/ 在装载状态结束时恢复这些状态位
                                                   }
-                                        } else boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
+                                        } else {
+                                                  display(::: Finding path to transport...\n);
+
+                                                  boat.current_path = router_boat(boat, __check_position_boat_T, NULL);
+                                        }
+
+                                        display(::: Going to trace lock path...\n);
+
+                                        __trace_lock(boat, boat.current_path);
                               }
                               boat.move();
 
